@@ -62,14 +62,8 @@ func test_damage_and_healing(game) -> void:
 	for source in ["rest", "event", "shop", "reward", "standard"]:
 		expect(game.healing_amount(20, source) == 0, "Cursed Lily left %s healing open." % source)
 	expect(game.healing_amount(20, "shrine") == 20, "Cursed Lily blocked the exceptional shrine source.")
-	if not game.foes.is_empty():
-		var direct: Dictionary = game.foes[0].duplicate(true)
-		var environment: Dictionary = direct.duplicate(true)
-		var initial := int(direct.hp)
-		Abilities.hero_hit(game, direct, 9)
-		Abilities.damage_foe(game, environment, 9)
-		expect(int(direct.hp) == initial - 18 and int(environment.hp) == initial - 9,
-			"Cursed Lily did not scale hero hits separately from neutral damage.")
+	expect(game.curses.attack_damage(9, game.hp, game.HEALTH[game.hero]) == 9,
+		"Cursed Lily should repeat basic attacks rather than multiply each hit.")
 	game.curses.restore([Curses.DEBT])
 	game.hp = 44
 	expect(game.player_hit_amount(20) == 20, "Red Moon Debt activated above 35% HP.")
@@ -87,12 +81,12 @@ func test_shop_and_rest(game) -> void:
 	game.petals = 100
 	var offers: Array[Dictionary] = game.merchant.stock(game)
 	var tea: Dictionary = offers[0]
-	expect(tea.price == 14 and offers[1].price == 18 and game.merchant.reroll_price(game) == 6,
+	expect(tea.price == 22 and offers[1].price == 18 and game.merchant.reroll_price(game) == 6,
 		"Shop quotes did not combine the healing debt and stock discount.")
-	expect(game.merchant.buy(game, 0) and game.hp == 100 and game.petals == 100 - int(tea.price),
+	expect(game.merchant.buy(game, 0) and game.hp == 90 and game.petals == 100 - int(tea.price),
 		"Purchasing Dew Tea used a different price or heal than shown.")
 	game.resume_run()
-	expect(game.petals == 86 and game.curses.active == [Curses.DEBT, Curses.CUP], "Shop checkpoint lost the purchase or curses.")
+	expect(game.petals == 78 and game.curses.active == [Curses.DEBT, Curses.CUP], "Shop checkpoint lost the purchase or curses.")
 	if not open_room(game, "rest"):
 		return
 	game.hp = 80

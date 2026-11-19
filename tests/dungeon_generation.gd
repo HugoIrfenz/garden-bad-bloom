@@ -12,7 +12,29 @@ func require(condition: bool, reason: String, seed_value: int, room_id: String =
 		quit(1)
 	return condition
 
+func check_optional_routes() -> bool:
+	var seen := {}
+	for biome in range(8):
+		for seed_value in range(24):
+			var floor := Dungeon.generate_floor(seed_value, biome)
+			Dungeon.add_optional_boss_route(floor, seed_value)
+			if floor.endless:
+				if not require(not floor.has("optional_boss_route"), "campaign detour in Endless", seed_value):
+					return false
+				continue
+			var route: Dictionary = floor.optional_boss_route
+			seen[route.boss] = true
+			if not require(graph_valid(floor) and route.rooms.size() == 3 and floor.nodes[route.entry].exits == [route.rejoin, route.rooms[0]],
+					"optional route must preserve its bypass and rejoin the campaign", seed_value):
+				return false
+			if not require(floor.nodes[route.rooms[2]].exits == [route.rejoin],
+					"optional arena must rejoin before the chapter boss", seed_value):
+				return false
+	return require(seen.size() == 13, "optional boss selection did not cover the full roster", 0)
+
 func run() -> void:
+	if not check_optional_routes():
+		return
 	var rooms_checked = 0
 	var biomes = {}
 	var room_kinds = {}
@@ -76,7 +98,8 @@ func graph_valid(floor: Dictionary) -> bool:
 			if not nodes.has(edge) or nodes[edge].layer <= node.layer:
 				return false
 			pending.append(edge)
-	if not (safe and branch_count >= 1 and branch_count <= 3
+	var max_branches := 4 if floor.has("optional_boss_route") else 3
+	if not (safe and branch_count >= 1 and branch_count <= max_branches
 			and visited.size() == nodes.size() and visited.has(floor.boss_id)):
 		return false
 	var ordered = nodes.values()

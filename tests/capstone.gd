@@ -40,8 +40,18 @@ func verify() -> void:
 	game._physics_process(0.016)
 	if not require(game.foes.size() == 1, "Main attack could not destroy all shield nodes"):
 		return
-	for _i in range(35):
+	for _i in range(1000):
+		if int(boss.hp) <= 0:
+			break
 		game.strike(boss)
+	game._physics_process(0.016)
+	if not require(game.boss_victory.left > 0.0, "Capstone defeat did not start the victory sequence"):
+		return
+	game.checkpoint()
+	game.resume_run()
+	if not require(game.boss_victory.left > 0.0, "Capstone victory sequence did not resume"):
+		return
+	game._physics_process(game.boss_victory.left)
 	game._physics_process(0.016)
 	if not require(game.screen == "clear", "The capstone defeat did not clear a normal-floor campaign"):
 		return

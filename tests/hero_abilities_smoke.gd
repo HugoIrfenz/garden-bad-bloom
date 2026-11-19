@@ -15,6 +15,8 @@ class Battle:
 	var bonus := 0
 	var skill_time := 0.0
 	var dash_remaining := 0.0
+	var dash_vector := Vector2.ZERO
+	var dash_evaded := false
 	var mercy := 0.0
 	var foes: Array[Dictionary] = []
 	var barrels: Array[Vector2] = []
@@ -52,7 +54,7 @@ func _initialize() -> void:
 	test_tidy_arrangement()
 	test_graffiti_cut()
 	if _failures.is_empty():
-		print("PASS: heroic guard and counter, placed delayed blast, moving leap and follow-up, snare, cover-blocked blink, and save round-trips.")
+		print("PASS: guard, delayed blast, chained leap, skill dash, cover-blocked blink, and save round-trips.")
 	else:
 		for failure in _failures:
 			push_error(failure)
@@ -121,22 +123,16 @@ func test_unauthorized_access() -> void:
 	expect(foe.hp == 78 and behind.hp == 90 and Abilities.consume_stun(foe, 0.08), "Nixia's leap did not stun its forward cone.")
 	ability.tick(game, 0.19)
 	expect(foe.hp == 60 and behind.hp == 90, "Nixia's follow-up missed or struck a foe behind the landing.")
+	reload_ability(ability)
+	ability.tick(game, 0.19)
+	expect(foe.hp == 42 and behind.hp == 90, "Nixia's third hit did not survive a checkpoint.")
 
 func test_tidy_arrangement() -> void:
 	var game := Battle.new()
 	game.hero = 3
-	var foe := game.add_foe(Vector2(205.0, 100.0))
 	var ability = Abilities.new()
-	expect(ability.cast(game), "Virelia's snare did not place.")
-	ability.tick(game, 0.12)
-	expect(foe.hp == 90, "The snare tripped before finishing its arm time.")
-	reload_ability(ability)
-	ability.tick(game, 0.13)
-	expect(foe.hp == 75 and is_equal_approx(float(foe.x), 184.0), "The snare did not pull and damage an enemy crossing the center.")
-	expect(Abilities.consume_stun(foe, 0.60) and Abilities.consume_stun(foe, 0.46), "Virelia's snare did not restrain its target long enough.")
-	expect(not Abilities.consume_stun(foe, 0.01), "Virelia's snare did not release its target.")
-	ability.tick(game, 1.0)
-	expect(foe.hp == 75, "Virelia's one-shot snare triggered twice.")
+	expect(ability.cast(game), "Virelia's skill dash did not start.")
+	expect(is_equal_approx(game.dash_remaining, 0.18) and is_equal_approx(game.dash_vector.length() * game.dash_remaining, 100.0), "Virelia's skill dash has the wrong distance or duration.")
 
 func test_graffiti_cut() -> void:
 	var game := Battle.new()

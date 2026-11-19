@@ -74,4 +74,7 @@ func defeat_boss(game, floor: int) -> void:
 	game.enter_room()
 	for foe in game.foes:
 		foe.hp = 0
+	game.room_arrival = 0.0
+	game._physics_process(0.016)
+	game._physics_process(game.boss_victory.left)
 	game._physics_process(0.016)

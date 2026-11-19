@@ -77,7 +77,7 @@ func cast(game) -> bool:
 	if not can_cast(game):
 		return false
 	cue_hero = int(game.hero)
-	cue_time = CUTIN_DURATION
+	cue_time = CUTIN_DURATION * (0.75 if cue_hero == 0 else 1.0)
 	game.resource = 0
 	return true
 
@@ -92,6 +92,9 @@ func tick_cutin(game, delta: float) -> bool:
 	return true
 
 func activate_cast(game, hero: int) -> void:
+	var relic_floor: int = game.floor_index if game.floor_index >= 0 else game.depth >> 2
+	if game.relics.spend_sixth_seat(relic_floor):
+		game.hp += game.healing_amount(6)
 	var origin: Vector2 = game.player
 	var facing: Vector2 = game.facing.normalized()
 	if hero in [1, 3, 4]:
@@ -105,6 +108,7 @@ func activate_cast(game, hero: int) -> void:
 		0:
 			_effect.counter = false
 			_effect.duration = AURA_TIME
+			add_bolt(game, origin, facing, "blade_wave", 460.0, 0.55)
 		1:
 			_effect.duration = 1.48
 			var zones: Array = []
@@ -351,7 +355,8 @@ func resolve_bolt(game, bolt: Dictionary, begin: Vector2, end: Vector2) -> bool:
 		if int(foe.hp) <= 0 or hit_capped(foe, bolt):
 			continue
 		var center: Vector2 = game.target(foe)
-		if Geometry.segment_gap(center, begin, end) > (27.0 if bool(foe.boss) else 14.0):
+		var hit_radius := 35.0 if bolt.ultimate == "blade_wave" else (27.0 if bool(foe.boss) else 14.0)
+		if Geometry.segment_gap(center, begin, end) > hit_radius:
 			continue
 		var distance = (center - begin).dot(direction)
 		if distance < nearest:
@@ -364,7 +369,9 @@ func resolve_bolt(game, bolt: Dictionary, begin: Vector2, end: Vector2) -> bool:
 	best.ultimate_hits = hit_count + 1
 	var power = 13 + int(game.bonus)
 	var mark_bonus := 0
-	if bolt.ultimate == "bloom":
+	if bolt.ultimate == "blade_wave":
+		power = 24 + int(game.bonus)
+	elif bolt.ultimate == "bloom":
 		mark_bonus = Statuses.precision_mark_bonus(best)
 		if mark_bonus > 0:
 			power += mark_bonus
@@ -382,11 +389,12 @@ func resolve_bolt(game, bolt: Dictionary, begin: Vector2, end: Vector2) -> bool:
 	var landed := Abilities.hero_hit(game, best, power)
 	if landed and mark_bonus > 0:
 		game.combat_status.consume_foe_mark(best)
-	return true
+	return bolt.ultimate != "blade_wave"
 
 func hit_capped(foe: Dictionary, bolt: Dictionary) -> bool:
 	# Cap each volley at two hits per target, including bosses and trail echoes.
-	return int(foe.get("ultimate_cast", -1)) == int(bolt.ultimate_cast) and int(foe.get("ultimate_hits", 0)) >= 2
+	var limit := 1 if bolt.ultimate == "blade_wave" else 2
+	return int(foe.get("ultimate_cast", -1)) == int(bolt.ultimate_cast) and int(foe.get("ultimate_hits", 0)) >= limit
 
 func foe_id(foe: Dictionary) -> int:
 	if not foe.has("ultimate_target_id"):
@@ -470,6 +478,11 @@ static func draw_disaster_stroke(canvas: Node2D, stroke: Dictionary, elapsed: fl
 	Visuals.spark(canvas, end, 13.0 * freshness, Color(color, freshness))
 
 static func draw_bolt(canvas: Node2D, bolt: Dictionary, point: Vector2, direction: Vector2) -> void:
+	if bolt.ultimate == "blade_wave":
+		var side := direction.orthogonal()
+		canvas.draw_arc(point - direction * 12.0, 27.0, direction.angle() - 0.8, direction.angle() + 0.8, 18, Color("#d9f5ff"), 5.0, true)
+		canvas.draw_line(point - side * 23.0, point + side * 23.0, Color("#87caff", 0.55), 3.0, true)
+		return
 	var tint = CAMELLIA if bolt.ultimate == "bloom" else IRIS
 	var edge = direction.orthogonal()
 	canvas.draw_line(point - direction * 20.0, point, Color(tint, 0.67), 3.6, true)

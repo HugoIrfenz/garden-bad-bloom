@@ -90,7 +90,12 @@ func apply_hero(id: String, duration: float, potency := 1.0, source := "", credi
 	var game = _game.get_ref() if _game != null else null
 	if game != null and (game.hp <= 0 or game.ultimates.cue_time > 0.0 or game.endless.protected_at(game.player)):
 		return false
-	return apply(_hero, name_for(id), duration, potency, source, credit, false, true)
+	id = name_for(id)
+	if game != null and id == POISON and game.relics.has_relic("mothercap_veil"):
+		duration *= 0.7
+	if game != null and id == ROOT and game.relics.has_relic("thorn_veil"):
+		duration *= 0.7
+	return apply(_hero, id, duration, potency, source, credit, false, true)
 
 
 func apply_foe(foe: Dictionary, id: String, duration: float, potency := 1.0,

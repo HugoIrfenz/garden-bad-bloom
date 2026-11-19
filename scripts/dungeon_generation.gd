@@ -12,6 +12,15 @@ const COVER_CLEARANCE = 28.0
 const SAFE_ENTRY_RADIUS = 88.0
 const SPAWN_SEPARATION = 40.0
 const EXIT_Y = 106.0
+const OPTIONAL_BOSS_PAIRS = [
+	["queen_of_dandelions", "first_scarecrow"],
+	["mother_of_spores", "truffle_bandit"],
+	["baroness_brasswing", "unfinished_hour"],
+	["bride_of_thorns", "antlered_choir"],
+	["crownless_prince", "madam_black_velvet"],
+	["queen_of_two_moons", "nebula_librarian"],
+	["empty_sixth_chair"],
+]
 const FRIENDLY_KINDS = ["transition", "rest", "shop", "treasure", "event", "curse"]
 const ROOM_KINDS = ["transition", "combat", "elite", "treasure", "shop", "event",
 	"rest", "curse", "challenge", "secret", "boss"]
@@ -79,6 +88,40 @@ static func generate_floor(run_seed: int, floor_index: int, biome: int = -1) -> 
 	return {"version": CONTENT_VERSION, "floor_index": floor_index, "biome": biome,
 		"endless": endless, "boss_cover": true, "entrance_id": "%s_r0" % prefix, "boss_id": "%s_r%d" % [prefix, spine_length - 1],
 		"nodes": nodes, "main_arcade": main_arcade}
+
+static func add_optional_boss_route(floor: Dictionary, run_seed: int, available: Array = []) -> void:
+	if floor.endless or floor.has("optional_boss_route"):
+		return
+	var boss_node: Dictionary = floor.nodes[floor.boss_id]
+	var start_layer := int(boss_node.layer) - 3
+	var prefix := "floor_%d" % int(floor.floor_index)
+	while start_layer >= 0 and floor.nodes["%s_r%d" % [prefix, start_layer]].exits.size() > 1:
+		start_layer -= 1
+	if start_layer < 0:
+		start_layer = int(boss_node.layer) - 2
+	var start := "%s_r%d" % [prefix, start_layer]
+	var rejoin := "%s_r%d" % [prefix, start_layer + 1]
+	var roster: Array = OPTIONAL_BOSS_PAIRS[int(floor.biome)]
+	if not available.is_empty():
+		roster = roster.filter(func(id): return id in available)
+	if roster.is_empty():
+		return
+	var selection := stream_seed(run_seed, int(floor.floor_index), start, "optional-boss:v1")
+	var boss: String = roster[posmod(selection, roster.size())]
+	var rooms: Array[String] = []
+	for index in range(3):
+		var id := "%s_optional_%d" % [prefix, index]
+		rooms.append(id)
+		var node := make_node(id, "challenge", start_layer, 1)
+		node.layer = float(start_layer) + float(index + 1) * 0.25
+		node.optional_boss = boss
+		node.optional_stage = index
+		floor.nodes[id] = node
+		if index > 0:
+			floor.nodes[rooms[index - 1]].exits.append(id)
+	floor.nodes[rooms.back()].exits.append(rejoin)
+	floor.nodes[start].exits.append(rooms.front())
+	floor.optional_boss_route = {"boss": boss, "rooms": rooms, "entry": start, "rejoin": rejoin}
 
 static func place_arcade_event(nodes: Dictionary, prefix: String, length: int,
 		biome: int, endless: bool, seed_value: int) -> String:

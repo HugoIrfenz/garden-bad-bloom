@@ -38,7 +38,7 @@ const SNARE_RADIUS = 37.0
 const SNARE_LIFETIME = 4.6
 const PAINT_LIFETIME = 1.65
 const PAINT_HALF_WIDTH = 19.0
-const COOLDOWNS = [GUARD_UNUSED_RECHARGE, 2.75, 2.40, 3.65, 2.55]
+const COOLDOWNS = [GUARD_UNUSED_RECHARGE, 2.75, 2.40, 3.65, 2.04]
 
 static func cooldown_for(hero: int) -> float:
 	return COOLDOWNS[clampi(hero, 0, COOLDOWNS.size() - 1)]
@@ -47,7 +47,11 @@ static func cooldown_for_game(game) -> float:
 	if int(game.hero) == 0:
 		var abilities = game.get("abilities")
 		return abilities.guard_recharge() if abilities != null else GUARD_UNUSED_RECHARGE
-	return cooldown_for(int(game.hero)) + (Elegy.RECHARGE_COST if Elegy.has_refrain(game) else 0.0)
+	var cooldown := cooldown_for(int(game.hero)) + (Elegy.RECHARGE_COST if Elegy.has_refrain(game) else 0.0)
+	var relics = game.get("relics")
+	if int(game.hero) == 2 and relics != null and relics.has_relic(Relics.ORCHID_SPRING):
+		cooldown *= 0.8
+	return cooldown
 
 static func ranged_skill_landmark(game, hero: int) -> Vector2:
 	var ranger := hero == 3
@@ -189,22 +193,31 @@ func cast(game) -> bool:
 			_effect.evolved = Elegy.is_evolved(game)
 			game.skill_time = cooldown_for_game(game)
 		2:
+			_cast_serial += 1
 			_effect = directed_effect("leap", LEAP_DURATION, origin, direction, strength)
-			game.skill_time = cooldown_for(2)
+			_effect.chain_id = _cast_serial
+			game.skill_time = cooldown_for_game(game)
 			var orchid = orchid_state(game)
 			if orchid != null:
 				refund = orchid.take_refund(game, strength)
 		3:
-			var site := ranged_skill_landmark(game, 3)
-			if not site.is_equal_approx(origin):
-				direction = origin.direction_to(site)
-			_effect = directed_effect("snare", SNARE_LIFETIME, site, direction, strength)
+			var destination := Encounters.clear_endpoint(game, origin, direction, 100.0, game.BARREL_CLEARANCE)
+			if destination.distance_to(origin) < 8.0:
+				return false
+			game.dash_remaining = 0.18
+			game.dash_vector = origin.direction_to(destination) * origin.distance_to(destination) / game.dash_remaining
+			game.dash_evaded = false
+			game.mercy = maxf(float(game.mercy), 0.225)
 			game.skill_time = cooldown_for(3)
 			var thread = game.get("snare_thread")
 			if thread != null:
-				thread.pin_skill(game, site)
+				thread.pin_skill(game, destination)
+			var talents = game.get("talents")
+			if talents != null:
+				talents.arm_snare_bloom(destination)
+			_effect.clear()
 		4:
-			var destination := Encounters.clear_endpoint(game, origin, direction, 96.0, game.BARREL_CLEARANCE)
+			var destination := Encounters.clear_endpoint(game, origin, direction, 120.0, game.BARREL_CLEARANCE)
 			if destination.distance_to(origin) < 8.0:
 				return false
 			_cast_serial += 1
@@ -257,6 +270,9 @@ func damage_after_guard(game, amount: int, source: Vector2, projectile: Dictiona
 		_effect.absorbed = true
 		_guard_absorbed = true
 		game.skill_time = GUARD_ABSORB_RECHARGE
+		var equipped = game.get("relics")
+		if equipped != null:
+			game.skill_time *= equipped.skill_cooldown_factor()
 	_effect.guard_impact = 0.18
 	_effect.guard_impact_angle = toward_source.angle() if not toward_source.is_zero_approx() else effect_direction().angle()
 	if perfect:
@@ -483,6 +499,8 @@ func resolve_leap(game) -> void:
 		if within_cone(game, foe, center, direction, LEAP_CONE, 0.54):
 			if hero_hit(game, foe, 12 + int(_effect.strength) * 2 + int(game.bonus)):
 				stun_foe(foe, 0.58)
+				if not hit:
+					foe.nixia_chain_id = int(_effect.get("chain_id", -1))
 				hit = true
 		elif meteor:
 			var point: Vector2 = game.target(foe)
@@ -494,16 +512,20 @@ func resolve_leap(game) -> void:
 	_effect.x = center.x
 	_effect.y = center.y
 	_effect.kind = "followup" if hit else "leap_impact"
+	_effect.chain_hits = 1
 	_effect.time = 0.18 if hit else 0.20
 
 func resolve_followup(game) -> void:
 	var center := effect_position()
+	var hit := false
 	for foe in game.foes:
-		if within_cone(game, foe, center, effect_direction(), LEAP_CONE + 8.0, 0.47):
-			hero_hit(game, foe, 18 + int(_effect.strength) * 2 + int(game.bonus))
-	_effect.kind = "leap_impact"
-	_effect.time = 0.23
-	_effect.finishing_strike = true
+		if int(foe.get("nixia_chain_id", -2)) == int(_effect.get("chain_id", -1)) and int(foe.hp) > 0 and within_cone(game, foe, center, effect_direction(), LEAP_CONE + 8.0, 0.47):
+			hit = hero_hit(game, foe, 18 + int(_effect.strength) * 2 + int(game.bonus))
+			break
+	_effect.chain_hits = int(_effect.get("chain_hits", 1)) + (1 if hit else 0)
+	_effect.kind = "followup" if hit and int(_effect.chain_hits) < 3 else "leap_impact"
+	_effect.time = 0.18 if _effect.kind == "followup" else 0.23
+	_effect.finishing_strike = _effect.kind == "leap_impact" and hit
 	game.sound.play("nixia", 0.83)
 
 func resolve_snare(game) -> void:

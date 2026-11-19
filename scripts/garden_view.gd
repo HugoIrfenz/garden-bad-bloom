@@ -365,6 +365,8 @@ static func ultimate_cutin(game) -> void:
 	var hero: int = game.ultimates.cue_hero
 	if remaining <= 0.0 or hero < 0 or hero >= game.NAMES.size():
 		return
+	if hero == 0:
+		remaining /= 0.75
 	var elapsed := maxf(0.0, float(game.HeroUltimates.CUTIN_DURATION) - remaining)
 	var veil := smoothstep(0.0, 0.12, elapsed) * smoothstep(0.0, 0.12, remaining)
 	game.draw_rect(CANVAS, Color(0.085, 0.045, 0.14, 0.36 * veil))
@@ -428,9 +430,9 @@ static func controls(game) -> void:
 	var skill_point: Vector2 = game.touch_position(game.SKILL)
 	var dodge_left := maxf(0.0, float(game.dodge_time))
 	var skill_left := maxf(0.0, float(game.skill_time))
-	var joystick_tone := Color(0.82, 0.74, 0.71, 0.69 if joystick_active else 0.32)
+	var joystick_tone := Color(0.90, 0.82, 0.78, 0.85 if joystick_active else 0.38)
 	ring(game, joystick_point, 44, joystick_tone, 0.45 if joystick_active else 0.21)
-	game.draw_circle(joystick_point + game.stick * 35.0, 13.0, joystick_tone, true, -1.0, true)
+	game.draw_circle(joystick_point + game.stick * 35.0, 15.0, joystick_tone, true, -1.0, true)
 	ring(game, attack_point, 31, CREAM, 0.72)
 	cooldown_ring(game, dodge_point, 23.0, CREAM, dodge_left, game.dodge_cooldown())
 	cooldown_ring(game, skill_point, 24.0, game.COLORS[game.hero], skill_left,
@@ -566,7 +568,14 @@ static func boss_health_bar(game) -> void:
 			continue
 		var boss_biome := int(foe.get("biome", game.active_biome))
 		var name: String = game.Codex.BESTIARY[clampi(boss_biome, 0, game.Codex.BESTIARY.size() - 1)][3][0]
-		var shield: int = game.AstralCore.shield_lives(game) if boss_biome == game.AstralCore.CORE else 0
+		var optional_id: String = foe.get("optional_boss", "")
+		if not optional_id.is_empty():
+			name = game.OptionalBosses.NAMES.get(optional_id, name)
+		var shield: int = game.AstralCore.shield_lives(game) if boss_biome == game.AstralCore.CORE and optional_id.is_empty() else 0
+		var shield_name := "ward nodes"
+		if optional_id == game.OptionalBosses.CHAIR:
+			shield_name = "string posts"
+			shield = game.foes.filter(func(actor): return actor.get("chair_post", false) and int(actor.hp) > 0).size()
 		var final_phase: bool = boss_biome == game.AstralCore.CORE and int(foe.get("finale_step", 0)) > 0
 		var panel := Rect2(267, 44, 330, 35)
 		frame(game, panel, Color("#211829"), Color("#d0a474") if final_phase else Color("#b68d80"))
@@ -580,6 +589,6 @@ static func boss_health_bar(game) -> void:
 		game.draw_rect(Rect2(bar.position, Vector2(roundf(300.0 * fill), bar.size.y)),
 			Color("#8bb8cf") if shield > 0 else Color("#d06f8c"))
 		centered(game, Rect2(286, 62, 292, 11),
-			"%d ward nodes" % shield if shield > 0 else "%d / %d" % [maxi(0, int(foe.hp)), int(foe.max)],
+			"%d %s" % [shield, shield_name] if shield > 0 else "%d / %d" % [maxi(0, int(foe.hp)), int(foe.max)],
 			9, Color("#fff3db"))
 		return

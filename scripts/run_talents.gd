@@ -33,11 +33,11 @@ const CATALOG = [
 	{"id": POCKET_METEOR, "hero": 2, "name": "Pocket Meteor", "branch": "Combo", "accent": Color("#e7a4ee"),
 		"detail": "Leaping with at least 3 Momentum sends out a circular shock that staggers nearby foes."},
 	{"id": SNARE_BLOOM, "hero": 3, "name": "Snare Bloom", "branch": "Precision", "accent": Color("#ecc894"),
-		"detail": "When a trap catches a foe, an outer ring blooms a moment later and snares enemies in its path."},
+		"detail": "Your skill dash plants a delayed outer ring that snares enemies in its path."},
 	{"id": INK_FOOTSTEPS, "hero": 4, "name": "Ink Footsteps", "branch": "Chaos", "accent": Color("#91dfd6"),
 		"detail": "Dodge to paint a trail that slows pursuing foes for 1.65 seconds."},
 	{"id": SEWING_THREAD, "hero": 3, "name": "Sewing Thread", "branch": "Precision", "accent": Color("#eebac8"),
-		"milestone": SECOND_MILESTONE, "detail": "Connect two Tidy Arrangement placements into a single-use tripwire that roots crossing foes."},
+		"milestone": SECOND_MILESTONE, "detail": "Connect two Tidy Arrangement dash endpoints into a single-use tripwire that roots crossing foes."},
 ]
 
 var chosen: Array[String] = []

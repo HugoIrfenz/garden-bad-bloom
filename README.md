@@ -4,6 +4,8 @@ An offline action roguelike by **Hugo & Angela Works**. Pick a Garden girl, desc
 
 **Free to win.** Earn Garden Seeds by playing and spend them on items, decorations, game cartridges, and soundtrack tapes.
 
+The 0.1.13 balance pass changes all five heroines and adds four heroine-specific starting relics. See [player checks](docs/PLAYTEST_0.1.13.md).
+
 [Download for Android](https://github.com/hugosyrf/garden-bad-bloom/releases/tag/v0.1.12) · [0.1.12 player notes](docs/PLAYTEST_0.1.12.md)
 
 ## Gameplay screenshots
@@ -21,7 +23,7 @@ Captured in the running game during development.
 Open `project.godot` in Godot 4.4.1 and run the project. The Android build uses landscape orientation and is sized for a phone.
 
 - Arrow keys move. **J** attacks, **K** dodges, **L** casts the active skill, **U** uses the ultimate, **I** uses the pocket item, and **E** interacts. **Esc** opens live run stats and pause. Confirming **End Run** forfeits the active build and dungeon progress.
-- Touch the movement half to place the floating joystick. Hold Vivianne’s or Virelia’s skill or ultimate button to preview where it will aim, and release on the button to cast. Settings lets you mirror controls, choose 30 or 60 FPS, and switch music and effects independently.
+- Touch the movement half to place the floating joystick. Hold Vivianne’s skill or ultimate, or Virelia’s ultimate, to preview its aim and release on the button to cast. Virelia's skill is a directional dash. Settings lets you mirror controls, choose 30 or 60 FPS, and switch music and effects independently.
 - The game uses one landscape 864 × 390 render grid, proportioned for the Xiaomi 14T Pro. Anime portraits, handcrafted menus, battlefield art and item icons share the concept board’s fine pixel finish.
 
 ## Implemented so far

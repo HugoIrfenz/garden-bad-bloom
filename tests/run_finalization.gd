@@ -72,6 +72,8 @@ func test_live_migration_and_finish() -> void:
 	restarted.room_arrival = 0.0
 	restarted.foes[0].hp = 0
 	restarted._physics_process(0.016)
+	restarted._physics_process(restarted.boss_victory.left)
+	restarted._physics_process(0.016)
 	expect(restarted.screen == "clear", "Fixture did not reach the capstone clear.")
 	restarted.tap(restarted.View.SECOND_OPTION.get_center())
 	expect(restarted.confirm_end_run and FileAccess.file_exists(RUN), "Ending a clear did not ask for confirmation.")

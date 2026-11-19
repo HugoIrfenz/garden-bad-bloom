@@ -108,14 +108,14 @@ static func draw_curses(game) -> void:
 	if ids.is_empty():
 		return
 	var view = game.View
-	var start := 397.0 - ids.size() * 47.0
 	view.centered(game, Rect2(260, 305, 274, 18), "Bound curses", 12, view.DIM, true)
 	for index in range(ids.size()):
 		var id := ids[index]
 		var title: String = game.RunCurses.CATALOG[id].title
-		var left := start + index * 94.0
-		game.RunCurses.draw_icon(game, id, Vector2(left + 9, 335), 8.0)
-		view.text(game, Vector2(left + 21, 339), title, 10, view.CREAM)
+		var left := 262.0 + float(index % 3) * 91.0
+		var row := 331.0 + float(floori(float(index) / 3.0)) * 14.0
+		game.RunCurses.draw_icon(game, id, Vector2(left + 5, row), 5.0)
+		view.text(game, Vector2(left + 12, row + 3), title, 9, view.CREAM)
 
 static func draw_equipment(game) -> void:
 	var view = game.View

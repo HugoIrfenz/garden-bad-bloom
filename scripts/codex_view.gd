@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Art = preload("res://scripts/garden_art.gd")
+const OptionalBosses = preload("res://scripts/optional_bosses.gd")
 const BACKDROP = preload("res://assets/art/menus/enemy_archive.png")
 const BACK = Rect2(49, 332, 127, 42)
 const WEAPONS = Rect2(639, 332, 173, 42)
@@ -13,12 +14,13 @@ const PAPER = Color("#f9eacb")
 const INK = Color("#342935")
 const FADED_INK = Color("#6e544d")
 
-static func entry_rect(index: int) -> Rect2:
-	return Rect2(49, 110 + index * 43, 247, 39)
+static func entry_rect(index: int, count := 5) -> Rect2:
+	var stride := minf(43.0, floorf(215.0 / maxi(1, count)))
+	return Rect2(49, 110 + index * stride, 247, stride - 3.0)
 
-static func entry_at(point: Vector2) -> int:
-	for index in range(5):
-		if entry_rect(index).has_point(point):
+static func entry_at(point: Vector2, count := 5) -> int:
+	for index in range(count):
+		if entry_rect(index, count).has_point(point):
 			return index
 	return -1
 
@@ -47,34 +49,38 @@ static func draw(game) -> void:
 		view.button(game, BIOME_NEXT, "›")
 
 	for index in range(entries.size()):
-		entry_card(game, entries[index], index)
+		entry_card(game, entries[index], index, entries.size())
 	var selected: Dictionary = entries[clampi(int(game.codex_kind), 0, entries.size() - 1)] if not entries.is_empty() else {}
 	detail_page(game, selected)
 	view.button(game, BACK, "Back", true)
 	view.button(game, RELICS, "Relic Ledger")
 	view.button(game, WEAPONS, "Weapon Ledger")
 
-static func entry_card(game, entry: Dictionary, index: int) -> void:
+static func entry_card(game, entry: Dictionary, index: int, count: int) -> void:
 	var view = game.View
-	var box := entry_rect(index)
+	var box := entry_rect(index, count)
 	var selected: bool = index == game.codex_kind
 	var known: bool = entry.discovered
 	var fill := Color("#f8ddb1") if selected else PAPER
 	view.frame(game, box, fill, Color("#eed397") if selected else BRONZE)
-	var point := box.position + Vector2(28, 19)
-	game.draw_circle(point, 17.0, Color("#e9ccaa"), true, -1.0, true)
-	game.draw_arc(point, 16.0, 0.0, TAU, 34, Color(BRONZE, 0.65), 1.0, true)
+	var point := box.position + Vector2(28, box.size.y * 0.5)
+	var radius := minf(17.0, box.size.y * 0.45)
+	game.draw_circle(point, radius, Color("#e9ccaa"), true, -1.0, true)
+	game.draw_arc(point, radius - 1.0, 0.0, TAU, 34, Color(BRONZE, 0.65), 1.0, true)
 	if known:
-		Art.garden_enemy(game, int(entry.biome), int(entry.kind),
-			point + Vector2(0.0, 13.0), 29.0, game.visual_clock, 0.0, 0.0)
+		var feet := point + Vector2(0.0, radius - 3.0)
+		if not entry.has("optional_boss"):
+			Art.garden_enemy(game, int(entry.biome), int(entry.kind), feet, radius * 1.7, game.visual_clock, 0.0, 0.0)
+		else:
+			OptionalBosses.draw_pose(game, entry.optional_boss, 0, feet, 1.0, radius * 1.7)
 	else:
 		view.centered(game, Rect2(point - Vector2(12, 12), Vector2(24, 24)), "?", 18, FADED_INK, true)
 	var name: String = entry.name if known else "Undiscovered"
 	var normal_width = Art.DISPLAY_FONT.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 	var name_size = 13 if normal_width > box.size.x - 69.0 else 14
-	view.text(game, box.position + Vector2(55, 19), name, name_size, INK, true)
+	view.text(game, box.position + Vector2(55, 19 if count <= 5 else box.size.y * 0.5 + 5.0), name, name_size, INK, true)
 	var label := ("BOSS" if bool(entry.boss) else "ENEMY") if known else ""
-	if not label.is_empty():
+	if count <= 5 and not label.is_empty():
 		view.text(game, box.position + Vector2(55, 32), label, 9, FADED_INK)
 	if selected:
 		view.diamond(game, box.end - Vector2(11.0, 12.0), 3.8, BRONZE)
@@ -92,12 +98,17 @@ static func detail_page(game, entry: Dictionary) -> void:
 	view.diamond(game, portrait + Vector2(0.0, 67.0), 4.0, BRONZE)
 	if known:
 		Art.shadow(game, portrait + Vector2(0.0, 42.0), 34.0)
-		Art.garden_enemy(game, int(entry.biome), int(entry.kind),
-			portrait + Vector2(0.0, 42.0), 100.0 if entry.boss else 92.0, game.visual_clock, 0.0, 0.0)
+		if entry.has("optional_boss"):
+			OptionalBosses.draw_pose(game, entry.optional_boss, 0, portrait + Vector2(0, 42), 1.0, 100.0)
+		else:
+			Art.garden_enemy(game, int(entry.biome), int(entry.kind),
+				portrait + Vector2(0.0, 42.0), 100.0 if entry.boss else 92.0, game.visual_clock, 0.0, 0.0)
 	else:
 		view.centered(game, Rect2(portrait - Vector2(24, 34), Vector2(48, 68)), "?", 48, FADED_INK, true)
 
 	var label := ("CHAPTER BOSS" if bool(entry.boss) else "ENEMY") if known else "ENTRY HIDDEN"
+	if known and entry.has("optional_boss"):
+		label = "OPTIONAL BOSS"
 	view.text(game, Vector2(506, 143), label, 11, FADED_INK)
 	var name: String = entry.name if known else "Undiscovered"
 	var name_lines := wrap_text(name, Art.DISPLAY_FONT, 283.0, 22)

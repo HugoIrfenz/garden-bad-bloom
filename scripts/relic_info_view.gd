@@ -7,11 +7,19 @@ const COUNTERCLOCK_ICON = preload("res://assets/art/items/counterclock_locket.pn
 const RECEIPT_ICON = preload("res://assets/art/items/honest_receipt.png")
 const RECEIPT_REGION = Rect2(169, 157, 882, 891)
 const STARTING_ICONS := {
+	Relics.ROSE_LENS: Rect2(929, 525, 351, 277),
+	Relics.ORCHID_SPRING: Rect2(497, 510, 332, 314),
+	Relics.CAMELLIA_RIBBON: Rect2(1395, 492, 332, 355),
+	Relics.IRIS_DICE: Rect2(929, 525, 351, 277),
 	Relics.WEDDING_RING: Rect2(497, 510, 332, 314),
 	Relics.GLASS_EYELASH: Rect2(929, 525, 351, 277),
 	Relics.LAST_TEASPOON: Rect2(1395, 492, 332, 355),
 }
 const HIGHLIGHTS := {
+	Relics.ROSE_LENS: ["Longer projectile range", "Vivianne only"],
+	Relics.ORCHID_SPRING: ["Faster skill recharge", "Nixia only"],
+	Relics.CAMELLIA_RIBBON: ["Faster movement", "Virelia only"],
+	Relics.IRIS_DICE: ["Chance for double damage", "Zaria only"],
 	Relics.WEDDING_RING: ["Survive a lethal hit", "Once per floor"],
 	Relics.GLASS_EYELASH: ["Piercing basic attack", "After a perfect dodge"],
 	Relics.LAST_TEASPOON: ["Wider basic attack", "At 1 HP · once per run"],

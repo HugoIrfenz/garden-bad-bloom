@@ -4,7 +4,17 @@ const Relics = preload("res://scripts/relic_effects.gd")
 const Evolutions = preload("res://scripts/weapon_evolutions.gd")
 
 const STARTERS = [Relics.WEDDING_RING, Relics.GLASS_EYELASH, Relics.LAST_TEASPOON]
+const SIGNATURES = ["", Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON, Relics.IRIS_DICE]
 const LEDGER_IDS = [
+	Relics.SIXTH_SEAT_TRINKET,
+	Relics.NEBULA_INDEX,
+	Relics.TWIN_MOON_PENDANT,
+	Relics.VELVET_RIBBON,
+	Relics.PRINCES_PIN,
+	Relics.THORN_VEIL,
+	Relics.CHOIR_ANTLER,
+	Relics.FEATHER_CROWN, Relics.HONEST_EYES, Relics.MOTHERCAP_VEIL, Relics.TRUFFLE_SATCHEL, Relics.BRASSWING_PIN, Relics.SECOND_CHANCE_DIAL,
+	Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON, Relics.IRIS_DICE,
 	Relics.WEDDING_RING, Relics.GLASS_EYELASH, Relics.LAST_TEASPOON, Relics.HONEST_RECEIPT,
 	Relics.THORNMAIL, Relics.COUNTERCLOCK_LOCKET, Relics.GUARDIANS_LEDGER,
 	Relics.ROSEBOUND_REFRAIN, Relics.BLACK_ROSE_INK, Relics.ORCHID_PUNCH_CARD, Relics.METRONOME_HEART,
@@ -25,6 +35,8 @@ const EVENT_SOURCES = {
 }
 
 static func hero_for(id: String) -> int:
+	if not id.is_empty() and id in SIGNATURES:
+		return SIGNATURES.find(id)
 	if id == Relics.COUNTERCLOCK_LOCKET:
 		return 0
 	for hero_index: int in Evolutions.RECIPES:
@@ -54,7 +66,33 @@ static func boss_preference(floor_index: int, hero: int, carried: Array[String])
 
 static func source_lines(id: String, biomes: Array) -> Array[String]:
 	var sources: Array[String] = []
-	if id in STARTERS:
+	if id == Relics.SIXTH_SEAT_TRINKET:
+		sources.append("Bloomheart Core · The Empty Sixth Chair.")
+	elif id == Relics.NEBULA_INDEX:
+		sources.append("Astral Greenhouse · The Nebula Librarian.")
+	elif id == Relics.TWIN_MOON_PENDANT:
+		sources.append("Astral Greenhouse · Queen of Two Moons.")
+	elif id == Relics.FEATHER_CROWN:
+		sources.append("Forgotten Garden · Queen of Dandelions.")
+	elif id == Relics.HONEST_EYES:
+		sources.append("Forgotten Garden · The First Scarecrow.")
+	elif id == Relics.MOTHERCAP_VEIL:
+		sources.append("Mushroom Kingdom · Mother of Spores.")
+	elif id == Relics.TRUFFLE_SATCHEL:
+		sources.append("Mushroom Kingdom · The Truffle Bandit.")
+	elif id == Relics.BRASSWING_PIN:
+		sources.append("Clockwork Conservatory · Baroness Brasswing.")
+	elif id == Relics.SECOND_CHANCE_DIAL:
+		sources.append("Clockwork Conservatory · The Unfinished Hour.")
+	elif id == Relics.THORN_VEIL:
+		sources.append("Bloodbloom Forest · Bride of Thorns.")
+	elif id == Relics.VELVET_RIBBON:
+		sources.append("Hollow Palace · Madam Black Velvet.")
+	elif id == Relics.PRINCES_PIN:
+		sources.append("Hollow Palace · The Crownless Prince.")
+	elif id == Relics.CHOIR_ANTLER:
+		sources.append("Bloodbloom Forest · The Antlered Choir.")
+	if id in STARTERS or id in SIGNATURES:
 		sources.append("Choose in Run Preparation.")
 	for floor_index: int in TREASURE_RELICS:
 		if TREASURE_RELICS[floor_index] == id:

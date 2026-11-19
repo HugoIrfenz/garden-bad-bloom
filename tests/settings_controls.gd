@@ -68,10 +68,10 @@ func run() -> void:
 	touch(game, 0, floating_point, true)
 	expect(game.joystick_id == 0 and game.joystick_origin == floating_point and game.stick == Vector2.ZERO,
 		"Mirrored joystick did not capture a fresh origin away from its resting indicator.")
-	drag(game, 0, floating_point + Vector2(9, 3))
+	drag(game, 0, floating_point + Vector2(6, 2))
 	expect(game.stick == Vector2.ZERO, "A small drag escaped the deadzone.")
 	drag(game, 0, floating_point + Vector2(36, 0))
-	expect(game.stick.x > 0.35 and game.stick.x < 0.6 and is_zero_approx(game.stick.y),
+	expect(game.stick.x > 0.55 and game.stick.x < 0.7 and is_zero_approx(game.stick.y),
 		"Partial drag did not preserve analog movement.")
 	drag(game, 1, floating_point - Vector2(190, 0))
 	expect(game.stick.x > 0.35, "An uncaptured finger overrode the joystick.")
@@ -169,7 +169,7 @@ func run() -> void:
 	expect(game.screen == "fight" and game.run_seed == seed and Engine.max_fps == 30,
 		"Continuing a run changed preferences or the active run.")
 	expect(not game.run_paused and game.hp == 67 and game.resource == 2 and game.bonus == 4
-		and game.relics.owned.size() == 5, "A suspended run lost its build on reload.")
+		and game.relics.owned.size() == game.Relics.DEFINITIONS.size(), "A suspended run lost its build on reload.")
 	game.screen = "roster"
 	game.tap(game.View.roster_hit(3).get_center())
 	expect(game.screen == "fight" and game.hero == 0 and game.run_id == active_run,

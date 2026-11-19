@@ -61,14 +61,15 @@ func run() -> void:
 		game.stick = Vector2.ZERO
 		if game.screen == "talent":
 			game.resume_run()
-			if not require(game.screen == "talent" and game.talents.offer(game.hero).has("id"),
+			if not require(game.screen == "talent" and game.talents.offer(game.hero, game.chapter_talent_milestone()).has("id"),
 					"The first chapter talent choice did not resume"):
 				return
 			game.tap(game.TalentView.LEARN.get_center())
-			if not require(game.talents.milestone_resolved(), "Choosing the chapter talent did not persist"):
+			if not require(game.talents.milestone_resolved(game.chapter_talent_milestone()), "Choosing the chapter talent did not persist"):
 				return
+			game.tap(game.TalentView.PROCEED.get_center())
 		if not require(game.floor_index == expected_floor and (next.is_empty() or game.room_id == expected_id),
-				"Walking through the chosen doorway took a different path"):
+				"Expected %s on floor %d, reached %s on floor %d (%s, %s)" % [expected_id, expected_floor, game.room_id, game.floor_index, game.screen, game.player]):
 			return
 		var traversed_id: String = game.room_id
 		game.resume_run()
@@ -107,7 +108,7 @@ func finish_room(game) -> bool:
 		var action: Rect2 = game.RouteView.ShopView.stock_rect(1) if game.room_kind == "shop" else game.RouteView.FIRST_ACTION
 		var expected_event := {}
 		var quote: int = game.merchant.stock(game)[1].price if game.room_kind == "shop" else 0
-		var rest_heal: int = game.healing_amount(30, "rest") if game.room_kind == "rest" else 0
+		var rest_heal: int = game.healing_amount(game.RunEconomy.CAMP_HEAL, "rest") if game.room_kind == "rest" else 0
 		var old_curses: Array[String] = game.curses.snapshot()
 		var curse_id := ""
 		if game.room_kind == "rest" and rest_heal == 0:
@@ -122,7 +123,7 @@ func finish_room(game) -> bool:
 			action = game.RouteView.LEAVE_ACTION
 			for index in range(2):
 				var preview: Dictionary = game.RoomEvents.preview(game, index)
-				if not preview.is_empty() and preview.available:
+				if not preview.is_empty() and preview.available and not preview.has("minigame"):
 					expected_event = preview
 					action = game.RouteView.FIRST_ACTION if index == 0 else game.RouteView.SECOND_ACTION
 					break
@@ -165,7 +166,11 @@ func finish_room(game) -> bool:
 			return false
 		for foe in game.foes:
 			foe.hp = 0
+		game.room_arrival = 0.0
 		game._physics_process(0.016)
+		if game.boss_victory.left > 0.0:
+			game._physics_process(game.boss_victory.left)
+			game._physics_process(0.016)
 	if game.screen == "clear":
 		return true
 	if not require(game.pending_chest, "Fight or treasure room did not offer a reward"):

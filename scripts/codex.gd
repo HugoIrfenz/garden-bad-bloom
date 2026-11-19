@@ -54,6 +54,30 @@ const BESTIARY = [
 ]
 
 var discovered: Dictionary = {}
+const OPTIONAL_ENTRIES = {
+	5: [["queen_of_two_moons", "Queen of Two Moons", "The center seam protects you from the dark altar’s gravity. At half health the altars swap roles."], ["nebula_librarian", "The Nebula Librarian", "Each shelf sweeps a different angle. Watch the gaps and leave marked pages before they burst."]],
+	6: [["empty_sixth_chair", "The Empty Sixth Chair", "Step clear of invitations. When the puppet rises, break both glowing string posts to expose it."]],
+	4: [
+		["crownless_prince", "The Crownless Prince", "Follow the real shadow. Lure the chandelier onto either mirror to stop its reflections."],
+		["madam_black_velvet", "Madam Black Velvet", "Leave the spotlight before it strikes. Once it reveals a puppet, interact beside the string to cut it."],
+	],
+	3: [
+		["bride_of_thorns", "Bride of Thorns", "Step beyond the shrinking ribbon knot before it closes. Wait out both thorn lanes after her veil tears, then strike during her recovery."],
+		["antlered_choir", "The Antlered Choir", "Interact beside the bells to silence them. Each muted bell shortens the charge after the Choir's chest flower lights up."],
+	],
+	2: [
+		["baroness_brasswing", "Baroness Brasswing", "Step aside from the needle dive and make space for the rotor gust. Destroy both detached drones to expose the core."],
+		["unfinished_hour", "The Unfinished Hour", "Leave your previous position behind. A beam can fire twice, and after the clock cracks its mirrored echoes strike in sequence."],
+	],
+	0: [
+		["queen_of_dandelions", "Queen of Dandelions", "Step outside the gust cone and dodge the seed landing circles. After the crown lifts, seeds fly inward."],
+		["first_scarecrow", "The First Scarecrow", "Bait the lunge into cover and step away from the marked needle lines. The moving shadow identifies the real Scarecrow."],
+	],
+	1: [
+		["mother_of_spores", "Mother of Spores", "Reach a glowing mushroom before the poison bloom. Check which platforms glow when the wind reverses."],
+		["truffle_bandit", "The Truffle Bandit", "Keep clear of the zigzag rush. When the gold magnet ring appears, step outside it before the truffle rolls."],
+	],
+}
 var weapon_discoveries: Dictionary = {}
 var relic_discoveries: Dictionary = {}
 var dirty = false
@@ -95,6 +119,12 @@ func observe_relics(ids: Array) -> void:
 
 func observe(foes: Array) -> void:
 	for foe: Dictionary in foes:
+		if foe.has("optional_boss") and not foe.has("optional_lesson"):
+			var optional_id := str(foe.optional_boss)
+			if not discovered.has(optional_id):
+				discovered[optional_id] = true
+				dirty = true
+			continue
 		var biome = int(foe.get("biome", -1))
 		var kind = int(foe.get("kind", -1))
 		if biome < 0 or biome >= BESTIARY.size() or kind < 0 or kind >= BESTIARY[biome].size():
@@ -123,6 +153,9 @@ func entries(biome: int) -> Array:
 		var data: Array = BESTIARY[biome][kind]
 		result.append({"biome": biome, "kind": kind, "name": data[0], "description": data[1],
 			"boss": kind == 3, "discovered": discovered.get(entry_id(biome, kind), false)})
+	for data: Array in OPTIONAL_ENTRIES.get(biome, []):
+		result.append({"biome": biome, "kind": -1, "optional_boss": data[0], "name": data[1],
+			"description": data[2], "boss": true, "discovered": discovered.get(data[0], false)})
 	return result
 
 static func entry_id(biome: int, kind: int) -> String:

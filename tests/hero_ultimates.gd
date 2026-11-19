@@ -66,8 +66,8 @@ func test_ranged_aim_and_kit(game) -> void:
 	var foe := actor(game, marked)
 	game.HeroUltimates.mark_foe(foe, 3.0)
 	game.act("skill")
-	var snare: Dictionary = game.abilities.snapshot().effect
-	expect(Vector2(snare.x, snare.y).is_equal_approx(marked), "Virelia's trap did not favor the marked target.")
+	expect(game.dash_remaining > 0.0 and game.dash_vector.x > 0.0, "Virelia's skill did not dash in her facing direction.")
+	game.dash_remaining = 0.0
 	game.act("attack")
 	var ranger_arrow: Dictionary = game.bolts[0]
 	expect(float(ranger_arrow.speed) < float(witch_bolt.speed) and float(ranger_arrow.life) > float(witch_bolt.life),
@@ -164,7 +164,7 @@ func test_perfect_bloom(game) -> void:
 	expect(float(center.dy) > 0.0, "The center arrow did not bend toward the marked target.")
 	for frame in range(36):
 		game.update_bolts(1.0 / 60.0)
-	expect(enemy.hp == 114 and game.resource == 0, "Perfect Bloom did not respect its marked bonus, per-target cap, or cost.")
+	expect(enemy.hp == 118 and game.resource == 0, "Perfect Bloom did not respect its marked bonus, per-target cap, damage adjustment, or cost.")
 
 func test_beautiful_disaster(game) -> void:
 	setup(game, 4)

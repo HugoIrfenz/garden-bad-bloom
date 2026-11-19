@@ -3,6 +3,23 @@ extends RefCounted
 const OrchidRhythm = preload("res://scripts/orchid_rhythm.gd")
 
 const WEDDING_RING = "angela_wedding_ring"
+const FEATHER_CROWN = "feather_crown"
+const HONEST_EYES = "honest_eyes"
+const TRUFFLE_SATCHEL = "truffle_satchel"
+const BRASSWING_PIN = "brasswing_pin"
+const SECOND_CHANCE_DIAL = "second_chance_dial"
+const THORN_VEIL = "thorn_veil"
+const CHOIR_ANTLER = "choir_antler"
+const PRINCES_PIN = "princes_pin"
+const VELVET_RIBBON = "velvet_ribbon"
+const TWIN_MOON_PENDANT = "twin_moon_pendant"
+const SIXTH_SEAT_TRINKET = "sixth_seat_trinket"
+const NEBULA_INDEX = "nebula_index"
+const MOTHERCAP_VEIL = "mothercap_veil"
+const ROSE_LENS = "rose_lens"
+const ORCHID_SPRING = "orchid_spring"
+const CAMELLIA_RIBBON = "camellia_ribbon"
+const IRIS_DICE = "iris_dice"
 const GLASS_EYELASH = "glass_eyelash"
 const LAST_TEASPOON = "last_teaspoon"
 const THORNMAIL = "relic_thornmail"
@@ -24,6 +41,23 @@ const RING_GRACE = 0.72
 const UNIVERSAL_BOSS_RELICS = [WEDDING_RING, GLASS_EYELASH, LAST_TEASPOON, HONEST_RECEIPT]
 const ANGELA_BOSS_RELICS = [THORNMAIL, COUNTERCLOCK_LOCKET]
 const DEFINITIONS = {
+	SIXTH_SEAT_TRINKET: {"name": "Sixth Seat Trinket", "rarity": "rare", "detail": "Your first ultimate each floor restores up to 6 HP."},
+	NEBULA_INDEX: {"name": "Nebula Index", "rarity": "rare", "detail": "Active skills recharge in 10% less time."},
+	TWIN_MOON_PENDANT: {"name": "Twin Moon Pendant", "rarity": "rare", "detail": "Every fourth basic attack that lands adds 5 damage on its first landed hit."},
+	VELVET_RIBBON: {"name": "Velvet Ribbon", "rarity": "rare", "detail": "The first damaging hit taken each hostile room grants +15% movement speed for 2 seconds."},
+	PRINCES_PIN: {"name": "Prince’s Pin", "rarity": "rare", "detail": "The first landed basic hit each hostile room deals 8 extra damage."},
+	CHOIR_ANTLER: {"name": "Choir Antler", "rarity": "rare", "detail": "Deal 10% more hit damage to enemies in recovery or stunned."},
+	THORN_VEIL: {"name": "Thorn Veil", "rarity": "rare", "detail": "Reduces Root duration by 30%."},
+	SECOND_CHANCE_DIAL: {"name": "Second Chance Dial", "rarity": "rare", "detail": "The first damaging hit each room cuts your remaining dodge cooldown by 0.6 seconds."},
+	BRASSWING_PIN: {"name": "Brasswing Pin", "rarity": "rare", "detail": "Basic attacks deal 10% more damage for 2 seconds after a skill."},
+	TRUFFLE_SATCHEL: {"name": "Truffle Satchel", "rarity": "rare", "detail": "Gain 2 additional Petals on each hostile room clear."},
+	HONEST_EYES: {"name": "Honest Eyes", "rarity": "rare", "detail": "The first basic hit after each dodge deals +3 damage."},
+	FEATHER_CROWN: {"name": "Feather Crown", "rarity": "rare", "detail": "+15% movement speed for 1 second after a dodge."},
+	MOTHERCAP_VEIL: {"name": "Mothercap Veil", "rarity": "rare", "detail": "Poison duration is reduced by 30%."},
+	ROSE_LENS: {"name": "Rose Lens", "rarity": "uncommon", "detail": "Vivianne's basic projectiles travel 20% farther."},
+	ORCHID_SPRING: {"name": "Orchid Spring", "rarity": "uncommon", "detail": "Nixia's skill recharges 20% faster."},
+	CAMELLIA_RIBBON: {"name": "Camellia Ribbon", "rarity": "uncommon", "detail": "Virelia moves 10% faster."},
+	IRIS_DICE: {"name": "Iris Dice", "rarity": "uncommon", "detail": "Zaria's damaging hits have a 15% chance to deal double damage."},
 	GLITTER_CRIME: {
 		"name": "Glitter Crime", "rarity": "uncommon",
 		"detail": "Zaria’s flank hits deal 30% more damage and leave paint. Step into a patch for one small slash.",
@@ -81,6 +115,7 @@ const DEFINITIONS = {
 
 var owned: Array[String] = []
 var ring_spent_floor = -1
+var sixth_seat_spent_floor := -1
 var pierce_armed = false
 var teaspoon_spent = false
 var receipt_room := ""
@@ -131,6 +166,9 @@ func equip(relic_id: String) -> bool:
 func has_relic(relic_id: String) -> bool:
 	return relic_id in owned
 
+func skill_cooldown_factor() -> float:
+	return 0.9 if has_relic(NEBULA_INDEX) else 1.0
+
 func iron_bouquet_active() -> bool:
 	return has_relic(THORNMAIL) and has_relic(COUNTERCLOCK_LOCKET)
 
@@ -153,6 +191,7 @@ func spend_rose_counter() -> void:
 func reset() -> void:
 	owned.clear()
 	ring_spent_floor = -1
+	sixth_seat_spent_floor = -1
 	pierce_armed = false
 	teaspoon_spent = false
 	receipt_room = ""
@@ -161,6 +200,12 @@ func reset() -> void:
 	ledger_armed = false
 	rosewall_armed = false
 	orchid.reset()
+
+func spend_sixth_seat(floor: int) -> bool:
+	if not has_relic(SIXTH_SEAT_TRINKET) or floor == sixth_seat_spent_floor:
+		return false
+	sixth_seat_spent_floor = floor
+	return true
 
 func ring_available(floor_index: int) -> bool:
 	return has_relic(WEDDING_RING) and floor_index > ring_spent_floor
@@ -211,7 +256,7 @@ func spend_guard_followthrough(rosewall: bool) -> void:
 
 func snapshot() -> Dictionary:
 	return {"version": STATE_VERSION, "owned": owned.duplicate(), "ring_spent_floor": ring_spent_floor,
-		"pierce_armed": pierce_armed, "teaspoon_spent": teaspoon_spent, "receipt_room": receipt_room,
+		"sixth_seat_spent_floor": sixth_seat_spent_floor, "pierce_armed": pierce_armed, "teaspoon_spent": teaspoon_spent, "receipt_room": receipt_room,
 		"rose_counter_through": rose_counter_through, "royal_guard_mastery": royal_guard_mastery,
 		"ledger_armed": ledger_armed, "rosewall_armed": rosewall_armed, "orchid": orchid.snapshot()}
 
@@ -227,6 +272,7 @@ func restore(snapshot_data: Variant) -> bool:
 			equip(entry)
 	if has_relic(WEDDING_RING):
 		ring_spent_floor = maxi(-1, int(snapshot_data.get("ring_spent_floor", -1)))
+	sixth_seat_spent_floor = maxi(-1, int(snapshot_data.get("sixth_seat_spent_floor", -1)))
 	pierce_armed = has_relic(GLASS_EYELASH) and bool(snapshot_data.get("pierce_armed", false))
 	teaspoon_spent = has_relic(LAST_TEASPOON) and bool(snapshot_data.get("teaspoon_spent", false))
 	if has_relic(HONEST_RECEIPT):

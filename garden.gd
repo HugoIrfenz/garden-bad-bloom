@@ -34,6 +34,7 @@ const RelicSources = preload("res://scripts/relic_sources.gd")
 const RouteView = preload("res://scripts/dungeon_route_view.gd")
 const RoomEvents = preload("res://scripts/room_events.gd")
 const RunCurses = preload("res://scripts/run_curses.gd")
+const OptionalBosses = preload("res://scripts/optional_bosses.gd")
 const RunEconomy = preload("res://scripts/run_economy.gd")
 const CapBoard = preload("res://scripts/cap_board.gd")
 const ArcadeCatalog = preload("res://scripts/arcade_catalog.gd")
@@ -113,8 +114,12 @@ const SKILL = Vector2(784, 254)
 const ULTIMATE = Vector2(714, 254)
 const POCKET = Vector2(651, 335)
 const JOYSTICK = Vector2(84, 323)
-const JOYSTICK_TRAVEL = 65.0
-const JOYSTICK_DEADZONE = 12.0
+const JOYSTICK_TRAVEL = 58.0
+const JOYSTICK_DEADZONE = 8.0
+const ELITE_CHANCE = 0.12
+const ELITE_HEAL_CHANCE = 0.30
+const ELITE_HEAL_AMOUNT = 8
+const ELITE_WINDUP_FACTOR = 0.80
 const ACTIVE_RUN_SCREENS = ["fight", "reward", "clear", "room_choice", "talent", "forge", "minigame"]
 const SWING_DURATION = 0.24
 const LILY_REPEAT_DELAY = 0.13
@@ -187,6 +192,7 @@ var _encounter_damage_scale := 1.0
 var save_time = 0.0
 var joystick_id = -1
 var joystick_origin: Vector2 = Vector2.ZERO
+var elite_heal_drops: Array[Dictionary] = []
 var stick = Vector2.ZERO
 var aim_touch_id := -1
 var aim_action := ""
@@ -234,6 +240,15 @@ var route_history: Array[String] = []
 var chest_position = CHEST
 var pending_chest = false
 var reward_relic_id = ""
+var feather_crown_left := 0.0
+var honest_eyes_ready := false
+var brasswing_pin_left := 0.0
+var second_chance_used := false
+var princes_pin_used := false
+var velvet_ribbon_used := false
+var velvet_ribbon_left := 0.0
+var twin_moon_hits := 0
+var twin_moon_sequences: Array[int] = []
 var chest_open_time = 0.0
 var world_image: TextureRect
 var world_canvas: Node2D
@@ -302,6 +317,10 @@ func start_run(legacy := false) -> void:
 	selected_weapon = ""
 	run_id = RunProfile.fresh_run_id()
 	relics.reset()
+	twin_moon_hits = 0
+	feather_crown_left = 0.0
+	honest_eyes_ready = false
+	brasswing_pin_left = 0.0
 	curses.restore()
 	combat_status.reset()
 	talents.reset()
@@ -309,7 +328,7 @@ func start_run(legacy := false) -> void:
 	var starting_item := selected_starting_item if not legacy and profile.has_unlock(selected_starting_item) else ""
 	pocket.restore(starting_item)
 	selected_starting_item = ""
-	if not legacy and selected_relic in Prep.RELIC_IDS:
+	if not legacy and selected_relic in Prep.relic_options(hero):
 		relics.equip(selected_relic)
 	selected_relic = ""
 	run_seed = randi()
@@ -331,10 +350,16 @@ func start_run(legacy := false) -> void:
 
 func load_floor() -> void:
 	floor_manifest = Dungeon.generate_floor(run_seed, floor_index)
+	Dungeon.add_optional_boss_route(floor_manifest, run_seed, OptionalBosses.NAMES.keys())
 	room_id = floor_manifest.entrance_id
 	route = 0
 
 func enter_room() -> void:
+	twin_moon_sequences.clear()
+	second_chance_used = false
+	princes_pin_used = false
+	velvet_ribbon_used = false
+	velvet_ribbon_left = 0.0
 	var room = current_room()
 	acquired_upgrade_id = ""
 	boss_victory.reset()
@@ -367,19 +392,27 @@ func enter_room() -> void:
 	chest_open_time = 0.0
 	foes.clear()
 	bolts.clear()
+	elite_heal_drops.clear()
 	mercy = 0.7
 	dash_remaining = 0.0
 	dash_evaded = false
 	relic_foe_serial = 0
 	visual_velocity = Vector2.ZERO
-	var boss = room_kind == "boss"
+	var side_boss := optional_arena_boss()
+	var approach := optional_approach()
+	var boss = room_kind == "boss" or not side_boss.is_empty()
 	var encounter_depth = depth if floor_index < 0 else floor_index * 4 + int(floor_manifest.nodes[room_id].layer / 2)
 	var count = 1 if boss else mini(2 + encounter_depth / 3 + route, room.spawns.size())
+	if not approach.is_empty():
+		count = mini(count, 2)
 	count = endless.encounter_count(count, room_kind)
 	var rng = Dungeon.seeded(room.encounter_seed)
+	var elite_rng = Dungeon.seeded(int(room.encounter_seed) ^ 0x5e17e)
 	for index in range(count):
 		var pos: Vector2 = room.spawns[index]
-		var elite := index == 0 and room_kind == "elite"
+		if not side_boss.is_empty():
+			pos = Vector2(clampf(pos.x, 300.0, 564.0), maxf(169.0, pos.y))
+		var elite: bool = not boss and (room_kind == "elite" or (room_kind in ["combat", "challenge"] and elite_rng.randf() < ELITE_CHANCE))
 		# The first encounter introduces the two melee enemies.
 		var kind = 3 if boss else (index if encounter_depth == 0 else rng.randi_range(0, 2))
 		if floor_index >= 0 and not boss and index == 0 and room_template in ["hedge_maze", "flowerbed_siege"]:
@@ -393,9 +426,17 @@ func enter_room() -> void:
 		var life := boss_health(encounter_depth) if boss else enemy_health(encounter_depth, active_biome, kind, elite)
 		var foe = {"x": pos.x, "y": pos.y, "hp": life, "max": life,
 			"boss": boss, "clock": 0.8 + index * 0.28, "phase": 0, "tx": 0.0, "ty": 0.0,
-			"kind": kind, "biome": active_biome, "enemy_power": enemy_power(encounter_depth, boss, elite)}
+			"kind": kind, "biome": active_biome, "enemy_power": enemy_power(encounter_depth, boss, elite),
+			"elite": elite, "elite_heal_drop": elite and elite_rng.randf() < ELITE_HEAL_CHANCE}
 		if boss:
 			foe.boss_health_multiplier = BOSS_HEALTH_MULTIPLIER
+		if not side_boss.is_empty():
+			foe.optional_boss = side_boss
+		elif index == 0 and not approach.is_empty():
+			foe.optional_boss = floor_manifest.nodes[room_id].optional_boss
+			foe.optional_lesson = approach[1]
+			foe.elite = false
+			foe.elite_heal_drop = false
 		if active_biome == ForestPalace.PALACE and kind == ForestPalace.PORCELAIN_HOUND:
 			foe.hound_side = 1 if int(room.encounter_seed) % 2 == 0 else -1
 		endless.mark_foe(foe, index, room_kind)
@@ -416,13 +457,29 @@ func current_room() -> Dictionary:
 		return Dungeon.legacy_room(run_seed, depth, route)
 	return Dungeon.generate_room(run_seed, floor_manifest, room_id)
 
+func optional_arena_boss() -> String:
+	var node: Dictionary = floor_manifest.get("nodes", {}).get(room_id, {})
+	return str(node.get("optional_boss", "")) if int(node.get("optional_stage", -1)) == 2 else ""
+
+func optional_approach() -> Array:
+	var node: Dictionary = floor_manifest.get("nodes", {}).get(room_id, {})
+	var stage := int(node.get("optional_stage", -1))
+	var lessons: Array = OptionalBosses.APPROACHES.get(node.get("optional_boss", ""), [])
+	return lessons[stage] if stage >= 0 and stage < lessons.size() else []
+
 func set_room_props(room: Dictionary) -> void:
 	active_biome = int(room.biome)
 	room_title = room.display_name
+	var side_boss := optional_arena_boss()
+	if OptionalBosses.NAMES.has(side_boss):
+		room_title = OptionalBosses.NAMES[side_boss]
+	var approach := optional_approach()
+	if not approach.is_empty():
+		room_title = approach[0]
 	room_template = room.template_id
 	ground_hazards.setup(room)
 	clockwork_floor.setup(room)
-	if floor_index < 0:
+	if floor_index < 0 or not side_boss.is_empty():
 		ground_hazards.patches.clear()
 		clockwork_floor.mode = ""
 	room_kind = room.kind
@@ -431,6 +488,14 @@ func set_room_props(room: Dictionary) -> void:
 		room_exits[NEXT_FLOOR] = Vector2(432, Dungeon.EXIT_Y)
 	chest_position = room.reward
 	barrels.assign(room.cover)
+	if not approach.is_empty() or side_boss in [OptionalBosses.MOTHER, OptionalBosses.BRASSWING]:
+		barrels.clear()
+	elif side_boss == OptionalBosses.SCARECROW:
+		barrels.clear()
+		var broken := int(floor_manifest.nodes[room_id].get("broken_hay", 0))
+		for index in range(OptionalBosses.HAY_POSTS.size()):
+			if (broken & (1 << index)) == 0:
+				barrels.append(OptionalBosses.HAY_POSTS[index])
 	EndlessRules.configure_floor(floor_manifest, run_seed)
 	endless.begin_room(floor_manifest, int(room.encounter_seed))
 
@@ -460,6 +525,14 @@ func checkpoint() -> void:
 	var snapshot = {"layout": CURRENT_LAYOUT, "room_generation": room_generation, "screen": screen, "hero": hero,
 		"run_id": run_id, "seed": run_seed, "depth": depth, "hp": hp,
 		"resource": resource, "petals": petals, "bonus": bonus, "route": route, "x": player.x, "y": player.y, "foes": foes, "bolts": bolts,
+		"elite_heal_drops": elite_heal_drops,
+		"feather_crown_left": feather_crown_left,
+		"honest_eyes_ready": honest_eyes_ready,
+		"brasswing_pin_left": brasswing_pin_left,
+		"second_chance_used": second_chance_used,
+		"princes_pin_used": princes_pin_used,
+		"velvet_ribbon_used": velvet_ribbon_used, "velvet_ribbon_left": velvet_ribbon_left,
+		"twin_moon_hits": twin_moon_hits, "twin_moon_sequences": twin_moon_sequences,
 		"attack_time": attack_time, "dodge_time": dodge_time, "mercy": mercy,
 		"pending_chest": pending_chest, "chest_open_time": chest_open_time, "reward_relic_id": reward_relic_id,
 		"floor_index": floor_index, "floor_manifest": floor_manifest, "room_id": room_id,
@@ -510,6 +583,12 @@ func resume_run() -> void:
 	room_complete = bool(state.get("room_complete", false))
 	room_clock = float(state.get("room_clock", 0.0))
 	room_arrival = clampf(float(state.get("room_arrival", 0.0)), 0.0, ROOM_ARRIVAL)
+	elite_heal_drops.clear()
+	var saved_drops: Variant = state.get("elite_heal_drops", [])
+	if saved_drops is Array:
+		for drop in saved_drops:
+			if drop is Dictionary and drop.has_all(["x", "y"]):
+				elite_heal_drops.append({"x": float(drop.x), "y": float(drop.y)})
 	boss_victory.restore(state.get("boss_victory"))
 	pocket.restore(str(state.get("pocket_item", "")), float(state.get("pocket_haste", 0.0)))
 	merchant.restore(state.get("merchant"))
@@ -572,6 +651,19 @@ func resume_run() -> void:
 	dodge_time = state.get("dodge_time", 0.0)
 	mercy = state.get("mercy", 0.0)
 	skill_time = state.get("skill_time", 0.0)
+	feather_crown_left = clampf(float(state.get("feather_crown_left", 0.0)), 0.0, 1.0)
+	honest_eyes_ready = bool(state.get("honest_eyes_ready", false))
+	brasswing_pin_left = clampf(float(state.get("brasswing_pin_left", 0.0)), 0.0, 2.0)
+	second_chance_used = bool(state.get("second_chance_used", false))
+	princes_pin_used = bool(state.get("princes_pin_used", false))
+	velvet_ribbon_used = bool(state.get("velvet_ribbon_used", false))
+	velvet_ribbon_left = clampf(float(state.get("velvet_ribbon_left", 0.0)), 0.0, 2.0)
+	twin_moon_hits = posmod(int(state.get("twin_moon_hits", 0)), 4)
+	twin_moon_sequences.clear()
+	var saved_sequences: Variant = state.get("twin_moon_sequences", [])
+	if saved_sequences is Array:
+		for saved_sequence in saved_sequences:
+			twin_moon_sequences.append(int(saved_sequence))
 	if not relics.restore(state.get("relics", {})):
 		relics.reset()
 	codex.observe_relics(relics.owned)
@@ -692,6 +784,7 @@ func update_stick(point: Vector2) -> void:
 	var offset := point - joystick_origin
 	var length := offset.length()
 	var strength := clampf(inverse_lerp(JOYSTICK_DEADZONE, JOYSTICK_TRAVEL, length), 0.0, 1.0)
+	strength = pow(strength, 0.85)
 	stick = offset.normalized() * strength
 
 func reset_joystick() -> void:
@@ -732,7 +825,7 @@ func press_screen_touch(index: int, point: Vector2) -> void:
 func preview_button_at(point: Vector2, radius := 27.0) -> String:
 	if hero not in [1, 3] or screen != "fight" or run_paused or room_complete or pending_chest or ultimates.locks_movement():
 		return ""
-	if skill_time <= 0.0 and dash_remaining <= 0.0 and not abilities.locks_movement() and point.distance_to(touch_position(SKILL)) < radius:
+	if hero == 1 and skill_time <= 0.0 and dash_remaining <= 0.0 and not abilities.locks_movement() and point.distance_to(touch_position(SKILL)) < radius:
 		return "skill"
 	if ultimate_ready() and point.distance_to(touch_position(ULTIMATE)) < radius:
 		return "ultimate"
@@ -897,7 +990,7 @@ func handle_tap(pos: Vector2) -> void:
 				codex_biome += 1
 				codex_kind = 0
 			else:
-				var entry = CodexView.entry_at(pos)
+				var entry = CodexView.entry_at(pos, codex.entries(codex_biome).size())
 				if entry >= 0 and entry < codex.entries(codex_biome).size():
 					codex_kind = entry
 		"armory":
@@ -938,11 +1031,15 @@ func handle_tap(pos: Vector2) -> void:
 			elif Prep.STARTING_POCKET.has_point(pos):
 				selected_starting_item = Prep.next_starting_item(self)
 			else:
-				var relic_id := Prep.relic_at(pos)
+				var relic_id := Prep.relic_at(pos, hero)
 				if not relic_id.is_empty():
 					selected_relic = relic_id
 		"fight":
-			if (pending_chest or uses_room_choice()) and Rect2(chest_position + Vector2(-39, -69), Vector2(78, 89)).has_point(pos):
+			if optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self, pos):
+				return
+			elif optional_arena_boss() == OptionalBosses.VELVET and OptionalBosses.sever_velvet_string(self, pos):
+				return
+			elif (pending_chest or uses_room_choice()) and Rect2(chest_position + Vector2(-39, -69), Vector2(78, 89)).has_point(pos):
 				interact()
 			elif click_room_exit(pos):
 				return
@@ -1097,6 +1194,10 @@ func uses_room_choice() -> bool:
 
 func interact() -> void:
 	if screen != "fight" or run_paused:
+		return
+	if optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self):
+		return
+	if optional_arena_boss() == OptionalBosses.VELVET and OptionalBosses.sever_velvet_string(self):
 		return
 	if pending_chest:
 		open_chest()
@@ -1289,13 +1390,13 @@ static func enemy_power(encounter_depth: int, boss: bool, elite: bool) -> float:
 	return 1.0 + later + (0.09 * smoothstep(0.0, 24.0, float(encounter_depth)) if boss else 0.0) + (0.10 if elite else 0.0)
 
 func dodge_cooldown() -> float:
-	return float(DASH_RECHARGE[hero]) * upgrades.dodge_factor()
+	return float(DASH_RECHARGE[hero]) * upgrades.dodge_factor() * curses.dodge_factor()
 
 func basic_attack_interval() -> float:
-	return float(Weapons.item(armory.for_hero(hero)).interval) * upgrades.attack_factor()
+	return float(Weapons.item(armory.for_hero(hero)).interval) * upgrades.attack_factor() * curses.attack_interval_factor()
 
 func skill_cooldown() -> float:
-	return HeroAbilities.cooldown_for_game(self) * upgrades.skill_factor(hero)
+	return HeroAbilities.cooldown_for_game(self) * upgrades.skill_factor(hero) * relics.skill_cooldown_factor()
 
 func assisted_aim(maximum: float, prefers_marks := false) -> Vector2:
 	var best_point := Vector2.INF
@@ -1361,13 +1462,20 @@ func take_reward_upgrade(id: String) -> bool:
 func healing_amount(amount: int, source := "standard") -> int:
 	if not curses.healing_block(source).is_empty():
 		return 0
-	return clampi(combat_status.hero_healing(amount), 0, maxi(0, HEALTH[hero] - hp))
+	return clampi(curses.healing(combat_status.hero_healing(amount)), 0, maxi(0, HEALTH[hero] - hp))
 
 func shop_price(amount: int, healing_item := false) -> int:
 	return curses.shop_price(amount, healing_item)
 
 func player_hit_amount(amount: int) -> int:
-	return curses.attack_damage(amount, hp, HEALTH[hero])
+	var result := curses.attack_damage(amount, hp, HEALTH[hero])
+	if result <= 0:
+		return 0
+	if hero == 3:
+		result = maxi(1, roundi(result * 0.9))
+	elif hero == 4 and relics.has_relic(Relics.IRIS_DICE) and randf() < 0.15:
+		result *= 2
+	return result
 
 func starting_weapon_options() -> Array[String]:
 	var result: Array[String] = [Weapons.starter(hero)]
@@ -1412,6 +1520,9 @@ func act(action: String) -> void:
 		return
 	if action == "dodge" and dodge_time <= 0:
 		talents.start_dodge()
+		honest_eyes_ready = relics.has_relic(Relics.HONEST_EYES)
+		if relics.has_relic(Relics.FEATHER_CROWN):
+			feather_crown_left = 1.0
 		var snare_scale: float = ground_hazards.break_snare()
 		var dodge_distance := float(DASH_DISTANCES[hero]) * snare_scale
 		var direction: Vector2 = facing
@@ -1430,7 +1541,9 @@ func act(action: String) -> void:
 	elif action == "skill":
 		var origin: Vector2 = player
 		if abilities.cast(self):
-			skill_time = float(skill_time) * upgrades.skill_factor(hero)
+			if relics.has_relic(Relics.BRASSWING_PIN):
+				brasswing_pin_left = 2.0
+			skill_time = float(skill_time) * upgrades.skill_factor(hero) * relics.skill_cooldown_factor()
 			painted_evolution.mark_exit(self, origin)
 			sound.hero_attack(hero, true)
 	elif action == "ultimate":
@@ -1509,6 +1622,8 @@ func fire_basic_shot(effect: Dictionary) -> void:
 	var speed := maxf(1.0, float(weapon.get("speed", 0.0)))
 	var reach := float(weapon.reach)
 	var lifetime := (0.47 if hero == 1 else 0.89) if id == Weapons.starter(hero) else reach / speed
+	if hero == 1:
+		lifetime *= 0.9 * (1.2 if relics.has_relic(Relics.ROSE_LENS) else 1.0)
 	var bolt = {"x": player.x, "y": player.y, "dx": facing.x, "dy": facing.y, "hero_projectile": hero,
 		"life": lifetime, "speed": speed, "weapon_id": id, "weapon_attack": int(effect.get("weapon_attack", -1))}
 	if bool(effect.get("lily_repeat", false)):
@@ -1521,7 +1636,13 @@ func fire_basic_shot(effect: Dictionary) -> void:
 		bolt.spread_y = player.y
 	if id == ElegyMagic.WEAPON:
 		ElegyMagic.prepare_bolt(bolt)
-	bolts.append(bolt)
+	var angles: Array = [-0.18, 0.0, 0.18] if hero == 1 and int(effect.get("weapon_attack", -1)) > 0 and int(effect.weapon_attack) % 3 == 0 else [0.0]
+	for angle: float in angles:
+		var shot := bolt.duplicate(true)
+		var direction := facing.rotated(angle)
+		shot.dx = direction.x
+		shot.dy = direction.y
+		bolts.append(shot)
 
 func advance_lily_combo() -> bool:
 	if hero != 0:
@@ -1597,12 +1718,27 @@ func strike(foe: Dictionary, finisher := false, weapon_id := "", sequence := -1,
 	var rose_power := Relics.ROSE_COUNTER_BONUS if rose_counter else 0
 	var raw: int = int(Weapons.item(id).damage) + close_bonus + bonus + guard_counter + rose_power \
 		+ (ultimates.counter_bonus() if not repeat else 0)
+	if honest_eyes_ready:
+		raw += 3
+	var prince_bonus := not princes_pin_used and relics.has_relic(Relics.PRINCES_PIN)
+	if prince_bonus:
+		raw += 8
+	var count_moon_hit := sequence >= 0 and not repeat and relics.has_relic(Relics.TWIN_MOON_PENDANT) and sequence not in twin_moon_sequences
+	if count_moon_hit and twin_moon_hits == 3:
+		raw += 5
 	var painted_flank := PaintedEvolution.flank(self, foe)
-	var amount := player_hit_amount(maxi(1, roundi(raw * damage_scale * (1.30 if painted_flank else 1.0))))
+	var pin_scale := 1.1 if brasswing_pin_left > 0.0 else 1.0
+	var amount := player_hit_amount(maxi(1, roundi(raw * damage_scale * pin_scale * (1.30 if painted_flank else 1.0))))
 	var was_marked := float(foe.get("camellia_mark", 0.0)) > 0.0 or CombatStatuses.has_foe(foe, "marked")
 	var loss = defend_foe(foe, amount)
 	foe.hp -= loss
 	if loss > 0:
+		honest_eyes_ready = false
+		if count_moon_hit:
+			twin_moon_sequences.append(sequence)
+			twin_moon_hits = (twin_moon_hits + 1) % 4
+		if prince_bonus:
+			princes_pin_used = true
 		sound.play("hit")
 		if repeat:
 			return
@@ -1623,6 +1759,19 @@ func strike(foe: Dictionary, finisher := false, weapon_id := "", sequence := -1,
 func defend_foe(foe: Dictionary, amount: int) -> int:
 	if ultimates.cue_time > 0.0 or endless.protected_at(target(foe)):
 		return 0
+	if relics.has_relic(Relics.CHOIR_ANTLER) and (int(foe.get("phase", 0)) == ForgottenEncounters.RECOVERY or float(foe.get("hero_stun", 0.0)) > 0.0):
+		amount = roundi(amount * 1.1)
+	if foe.has("optional_boss"):
+		if foe.optional_boss == OptionalBosses.CHAIR and foe.boss:
+			if not foe.get("optional_second", false):
+				return mini(amount, maxi(0, int(foe.hp) - floori(float(foe.max) * 0.4)))
+			if OptionalBosses.chair_posts_active(foes):
+				return 0
+		if foe.optional_boss == OptionalBosses.BRASSWING and foe.boss and foe.get("optional_second", false):
+			for drone: Dictionary in foes:
+				if drone.get("brasswing_drone", false) and int(drone.hp) > 0:
+					return 0
+		return amount
 	if active_biome < ENCOUNTERS_BY_BIOME.size():
 		return ENCOUNTERS_BY_BIOME[active_biome].defend(self, foe, amount)
 	return amount
@@ -1650,8 +1799,11 @@ func _process(delta: float) -> void:
 		jukebox.stop()
 	var boss_active = room_kind == "boss" and (boss_victory.left > 0.0 \
 		or foes.any(func(foe): return foe.get("boss", false) and int(foe.hp) > 0))
+	var optional_cue := optional_arena_boss() if screen == "fight" and not room_complete and not pending_chest else ""
 	if screen in ["minigame", "arcade_practice"] and not arcade.id.is_empty():
 		sound.request(ArcadeCatalog.DATA[arcade.id].cue)
+	elif not optional_cue.is_empty():
+		sound.request(optional_cue)
 	else:
 		sound.sync("garden_hub" if browsing_jukebox else screen, active_biome, room_kind, boss_active)
 	menu_motion.advance(pause_menu_screen() if run_paused else screen, hero, selected_relic, get_local_mouse_position(), delta)
@@ -1695,6 +1847,9 @@ func _physics_process(delta: float) -> void:
 	if lily_combo_time <= 0.0:
 		lily_combo = 0
 	dodge_time -= recovery_delta
+	feather_crown_left = maxf(0.0, feather_crown_left - delta)
+	brasswing_pin_left = maxf(0.0, brasswing_pin_left - delta)
+	velvet_ribbon_left = maxf(0.0, velvet_ribbon_left - delta)
 	skill_time -= recovery_delta
 	mercy -= delta
 	flash -= delta
@@ -1709,7 +1864,13 @@ func _physics_process(delta: float) -> void:
 		facing = move.normalized()
 		var haste_scale = RunItems.TONIC_MOVEMENT if pocket.haste > 0.0 else 1.0
 		var movement_scale := minf(ground_hazards.movement_scale(), combat_status.hero_movement_scale())
-		var walk_speed := float([143.0, 151.0, 167.0, 151.0, 175.0][hero]) * upgrades.movement_factor()
+		var walk_speed := float([143.0, 151.0, 167.0, 151.0, 175.0][hero]) * upgrades.movement_factor() * curses.movement_factor()
+		if feather_crown_left > 0.0:
+			walk_speed *= 1.15
+		if velvet_ribbon_left > 0.0:
+			walk_speed *= 1.15
+		if hero == 3:
+			walk_speed *= 1.05 * (1.1 if relics.has_relic(Relics.CAMELLIA_RIBBON) else 1.0)
 		player = slide_with_cover(player, move * walk_speed * haste_scale * movement_scale * delta)
 	painted_evolution.tick(self, before, delta)
 	abilities.tick(self, delta)
@@ -1724,6 +1885,7 @@ func _physics_process(delta: float) -> void:
 		update_bolts(delta)
 	var thread_samples := snare_thread.sample_foes(self)
 	update_foes(delta, room_arrival > 0.0)
+	collect_elite_heals()
 	if boss_victory.left > 0.0:
 		if hp <= 0:
 			finish_run("The Garden claims another")
@@ -1776,7 +1938,9 @@ func step_dungeon_room(delta: float, move: Vector2) -> bool:
 
 	ground_hazards.disarm()
 	clockwork_floor.disarm()
-	petals += RunEconomy.room_petals(room_kind, floor_index, room_clock <= HUNT_TIME)
+	petals += curses.room_reward(RunEconomy.room_petals(room_kind, floor_index, room_clock <= HUNT_TIME))
+	if relics.has_relic(Relics.TRUFFLE_SATCHEL) and room_kind not in Dungeon.FRIENDLY_KINDS:
+		petals += 2
 	bolts.clear()
 	if room_kind == "boss" and floor_index == Dungeon.BIOME_COUNT - 1:
 		screen = "clear"
@@ -1785,6 +1949,9 @@ func step_dungeon_room(delta: float, move: Vector2) -> bool:
 		pending_chest = true
 		if room_kind == "boss":
 			reward_relic_id = boss_relic_offer()
+		elif not optional_arena_boss().is_empty():
+			var relic_id: String = OptionalBosses.REWARDS.get(optional_arena_boss(), "")
+			reward_relic_id = relic_id if not relics.has_relic(relic_id) else ""
 		else:
 			reward_weapon_id = reward_weapon_offer()
 	checkpoint()
@@ -1920,6 +2087,7 @@ func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Diction
 			checkpoint.call_deferred()
 		return
 	amount = maxi(1, roundi(amount * _encounter_damage_scale))
+	amount = curses.incoming_damage(amount)
 	var damage = abilities.damage_after_guard(self, amount, source, projectile)
 	if damage < amount:
 		sound.play("guard")
@@ -1933,6 +2101,8 @@ func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Diction
 	var before := int(hp)
 	var hit = relics.resolve_damage(hp, adjusted, relic_floor)
 	hp = hit.hp
+	if int(hp) < before:
+		apply_damage_relics()
 	if int(hp) < before and projectile.get("glass_shard", false):
 		combat_status.apply_hero(CombatStatuses.CHILL, 3.2, 1.0, "glass_shard", "hazard")
 	sound.play("upgrade_guard" if aegis_used else "hurt")
@@ -1943,16 +2113,28 @@ func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Diction
 	if hero == 2:
 		resource = maxi(0, resource - 2)
 
+func apply_damage_relics() -> void:
+	if not second_chance_used and relics.has_relic(Relics.SECOND_CHANCE_DIAL):
+		second_chance_used = true
+		dodge_time = maxf(0.0, float(dodge_time) - 0.6)
+	if not velvet_ribbon_used and relics.has_relic(Relics.VELVET_RIBBON) and not foes.is_empty():
+		velvet_ribbon_used = true
+		velvet_ribbon_left = 2.0
+
 func damage_hero_from_status(amount: int) -> void:
 	if amount <= 0 or hp <= 0 or mercy > 0.0 or room_arrival > 0.0 or room_complete \
 			or pending_chest or foes.is_empty() or ultimates.cue_time > 0.0 or endless.protected_at(player):
 		return
+	amount = curses.incoming_damage(amount)
 	if abilities.damage_after_guard(self, amount, Vector2.INF) == 0:
 		sound.play("guard")
 		return
 	var relic_floor = floor_index if floor_index >= 0 else depth >> 2
 	var result = relics.resolve_damage(hp, amount, relic_floor)
+	var before := int(hp)
 	hp = result.hp
+	if int(hp) < before:
+		apply_damage_relics()
 	damage_flash = maxf(damage_flash, 0.09)
 	sound.play("hurt", 0.84)
 	if result.prevented:
@@ -1960,9 +2142,13 @@ func damage_hero_from_status(amount: int) -> void:
 		checkpoint.call_deferred()
 
 func update_foes(delta: float, arriving := false) -> void:
+	if not arriving and optional_arena_boss() == OptionalBosses.BRASSWING and not foes.is_empty():
+		OptionalBosses.tick_rails(self)
 	for i in range(foes.size() - 1, -1, -1):
 		var foe = foes[i]
 		if foe.hp <= 0:
+			if bool(foe.get("elite", false)) and bool(foe.get("elite_heal_drop", false)):
+				elite_heal_drops.append({"x": float(foe.x), "y": float(foe.y)})
 			if not foe.get("web_anchor", false):
 				endless.defeat(self, foe)
 			if foe.boss and active_biome < Art.ENEMY_ATLASES.size():
@@ -1990,8 +2176,13 @@ func update_foes(delta: float, arriving := false) -> void:
 				foe.biome = active_biome
 			var projectile_start := bolts.size()
 			_encounter_damage_scale = clampf(float(foe.get("enemy_power", 1.0)), 1.0, 1.65)
-			ENCOUNTERS_BY_BIOME[active_biome].advance(self, foe, endless.move_delta(foe, delta) * foot_scale)
-			pace_boss_phase(foe, previous_phase)
+			if foe.has("optional_boss"):
+				OptionalBosses.advance(self, foe, delta)
+			else:
+				ENCOUNTERS_BY_BIOME[active_biome].advance(self, foe, endless.move_delta(foe, delta) * foot_scale)
+			pace_elite_windup(foe, previous_phase)
+			if not foe.has("optional_boss"):
+				pace_boss_phase(foe, previous_phase)
 			for projectile_index in range(projectile_start, bolts.size()):
 				if bolts[projectile_index].has("damage"):
 					bolts[projectile_index].enemy_power = _encounter_damage_scale
@@ -2024,8 +2215,28 @@ func update_foes(delta: float, arriving := false) -> void:
 			foe.clock = 0.85
 			if foe.boss:
 				foe.clock = boss_recovery(foe, float(foe.clock))
+		pace_elite_windup(foe, previous_phase)
 		pace_boss_phase(foe, previous_phase)
 		tick_foe_status(foe, pos, previous_phase, delta)
+
+func collect_elite_heals() -> void:
+	for index in range(elite_heal_drops.size() - 1, -1, -1):
+		var drop: Dictionary = elite_heal_drops[index]
+		if player.distance_to(Vector2(drop.x, drop.y)) > 20.0:
+			continue
+		var amount := healing_amount(ELITE_HEAL_AMOUNT, "standard")
+		if amount <= 0:
+			continue
+		hp += amount
+		elite_heal_drops.remove_at(index)
+		sound.play("reward")
+		checkpoint.call_deferred()
+
+static func pace_elite_windup(foe: Dictionary, previous_phase: int) -> void:
+	if not bool(foe.get("elite", false)) or previous_phase == ForgottenEncounters.WINDUP or int(foe.phase) != ForgottenEncounters.WINDUP:
+		return
+	foe.clock = maxf(0.30, float(foe.clock) * ELITE_WINDUP_FACTOR)
+	foe.duration = foe.clock
 
 static func pace_boss_phase(foe: Dictionary, previous_phase: int) -> void:
 	var phase := int(foe.phase)
@@ -2117,7 +2328,10 @@ func _draw() -> void:
 
 func draw_world() -> void:
 	var biome = active_biome
-	if ROOM_VARIANT_CELLS.has(room_template):
+	var arena_art := OptionalBosses.arena_texture(optional_arena_boss())
+	if arena_art != null:
+		world_canvas.draw_texture_rect(arena_art, View.ROOM_ART, false)
+	elif ROOM_VARIANT_CELLS.has(room_template):
 		var cell: Array = ROOM_VARIANT_CELLS[room_template]
 		var atlas: Texture2D = ROOM_VARIANT_ART[cell[0]]
 		var size = (atlas.get_size() * 0.5).floor()
@@ -2134,6 +2348,11 @@ func draw_world() -> void:
 	View.petals(world_canvas, visual_clock, true)
 	endless.draw_field(self)
 	ground_hazards.draw(self)
+	for drop: Dictionary in elite_heal_drops:
+		var point := Vector2(drop.x, drop.y)
+		world_canvas.draw_circle(point, 9.0, Color("#bcf4bd"), true, -1.0, true)
+		world_canvas.draw_line(point + Vector2(-5, 0), point + Vector2(5, 0), Color("#305d43"), 2.5, true)
+		world_canvas.draw_line(point + Vector2(0, -5), point + Vector2(0, 5), Color("#305d43"), 2.5, true)
 	clockwork_floor.draw(self)
 	pocket.draw(self)
 	armory.draw(self)
@@ -2145,6 +2364,10 @@ func draw_world() -> void:
 	combat_status.draw(self)
 	talents.draw(self)
 	for foe in foes:
+		if foe.has("optional_boss"):
+			OptionalBosses.draw_arena_props(self, foe)
+			OptionalBosses.warning(self, foe)
+			continue
 		if foe.phase == 1:
 			draw_warning(foe)
 		if biome < ENCOUNTERS_BY_BIOME.size() and foe.has("biome"):
@@ -2165,9 +2388,14 @@ func draw_world() -> void:
 		if actor.has("hero_actor"):
 			draw_hero()
 		elif actor.has("falling_boss"):
-			boss_victory.draw_actor(world_canvas, biome)
+			var defeat_pose := 6 if boss_victory.left > BossVictory.LANDING else 7
+			if not OptionalBosses.draw_pose(world_canvas, optional_arena_boss(), defeat_pose, boss_victory.spot + Vector2(0, 13)):
+				boss_victory.draw_actor(world_canvas, biome)
 		elif actor.has("barrel"):
-			Art.room_cover(world_canvas, biome, depth, actor.cover_index, actor.barrel + Vector2(0, 9), room_kind == "boss")
+			if optional_arena_boss() == OptionalBosses.SCARECROW:
+				OptionalBosses.draw_hay(world_canvas, actor.barrel)
+			else:
+				Art.room_cover(world_canvas, biome, depth, actor.cover_index, actor.barrel + Vector2(0, 9), room_kind == "boss")
 		elif actor.has("chest"):
 			draw_chest()
 		elif actor.has("encounter_prop"):
@@ -2255,6 +2483,18 @@ func draw_warning(foe: Dictionary) -> void:
 	world_canvas.draw_arc(point, radius - 4.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 44, Color("#ffe3b3"), 3.0, true)
 
 func draw_foe(foe: Dictionary, biome: int) -> void:
+	if foe.get("chair_post", false):
+		var center := target(foe)
+		world_canvas.draw_circle(center, 15.0, Color("#472f55"))
+		world_canvas.draw_rect(Rect2(center - Vector2(5, 21), Vector2(10, 25)), Color("#bc798f"))
+		world_canvas.draw_arc(center - Vector2(0, 20), 7.0, 0, TAU, 16, Color("#ffe2c3"), 2.0, true)
+		return
+	if foe.get("brasswing_drone", false):
+		var center := target(foe)
+		world_canvas.draw_circle(center, 11.0, Color("#c68b51"), true)
+		world_canvas.draw_arc(center, 14.0, visual_clock * 13.0, visual_clock * 13.0 + PI, 14, Color("#f4d191"), 2.0, true)
+		world_canvas.draw_rect(Rect2(center + Vector2(-2, -2), Vector2(4, 4)), Color("#92ded2"))
+		return
 	if foe.get("web_anchor", false):
 		ForestPalace.draw_web_anchor(self, foe)
 		return
@@ -2262,7 +2502,7 @@ func draw_foe(foe: Dictionary, biome: int) -> void:
 		AstralCore.draw_node(self, foe)
 		return
 	var pos = target(foe)
-	var radius = 26.0 if foe.boss else 14.0
+	var radius = 26.0 if foe.boss else (18.0 if foe.get("elite", false) else 14.0)
 	var feet = pos + Vector2(0, radius * 0.51)
 	var visible := smoothstep(0.06, 0.90, 1.0 - room_arrival / ROOM_ARRIVAL)
 	if room_arrival > 0.0:
@@ -2272,9 +2512,13 @@ func draw_foe(foe: Dictionary, biome: int) -> void:
 			Color(tint, sin(PI * bloom) * 0.85), 1.5, true)
 		feet.y += (1.0 - visible) * 8.0
 	Art.shadow(world_canvas, feet, radius * 0.95 * visible)
+	if foe.has("optional_boss") and not foe.has("optional_lesson") and OptionalBosses.draw_pose(world_canvas, foe.optional_boss, OptionalBosses.pose(foe, visual_clock), feet, visible):
+		return
 	if biome < Art.ENEMY_ATLASES.size():
 		var kind = int(foe.get("kind", 3 if foe.boss else 0))
 		var height = [42.0, 30.0, 44.0, 86.0, 55.0][kind]
+		if foe.get("elite", false):
+			height *= 1.3
 		if biome == 1 and kind == BiomeEncounters.MYCELIUM_LEAPER:
 			if foe.phase == ForgottenEncounters.LUNGE:
 				var peak = sin(ForgottenEncounters.progress(foe) * PI) * 47.0
@@ -2298,9 +2542,12 @@ func draw_foe(foe: Dictionary, biome: int) -> void:
 		world_canvas.draw_circle(pos, radius, Color("#cf608d", visible), true, -1.0, true)
 	if visible < 0.96:
 		return
-	var top = pos.y - (81.0 if foe.boss and biome < Art.ENEMY_ATLASES.size() else 40.0)
+	var top = pos.y - (81.0 if foe.boss and biome < Art.ENEMY_ATLASES.size() else (52.0 if foe.get("elite", false) else 40.0))
 	var left = Vector2(pos.x - radius, top)
 	endless.draw_foe_badge(world_canvas, foe, Vector2(pos.x + radius + 9.0, top + 7.0))
+	if foe.get("elite", false):
+		var badge := Vector2(pos.x + radius + 7.0, top + 7.0)
+		world_canvas.draw_colored_polygon(PackedVector2Array([badge + Vector2(-7, 4), badge + Vector2(-8, -4), badge + Vector2(-3, -1), badge + Vector2(0, -8), badge + Vector2(3, -1), badge + Vector2(8, -4), badge + Vector2(7, 4)]), Color("#f0c279"))
 	if foe.boss:
 		return
 	world_canvas.draw_line(left, left + Vector2(radius * 2.0, 0), Color("#3a1d37"), 3)

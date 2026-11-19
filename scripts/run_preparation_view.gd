@@ -25,12 +25,19 @@ const PANEL = Color("#231b2a")
 const GOLD_ACTIVE = Color("#f9d19a")
 
 static func relic_rect(index: int) -> Rect2:
-	return Rect2(250 + index * 186, 155, 170, 107)
+	return Rect2(250 + index * 138, 155, 128, 107)
 
-static func relic_at(point: Vector2) -> String:
-	for index in range(RELIC_IDS.size()):
+static func relic_options(hero: int) -> Array:
+	var result := RELIC_IDS.duplicate()
+	if hero > 0 and hero < RelicSources.SIGNATURES.size():
+		result.append(RelicSources.SIGNATURES[hero])
+	return result
+
+static func relic_at(point: Vector2, hero := 0) -> String:
+	var options := relic_options(hero)
+	for index in range(options.size()):
 		if relic_rect(index).has_point(point):
-			return RELIC_IDS[index]
+			return options[index]
 	return ""
 
 static func starting_items(game) -> Array[String]:
@@ -57,7 +64,7 @@ static func draw(game) -> void:
 	draw_hero_panel(game)
 	draw_weapon(game)
 	view.text(game, Vector2(250, 145), "Choose a Starting Relic", 20, view.CREAM, true)
-	for index in range(RELIC_IDS.size()):
+	for index in range(relic_options(game.hero).size()):
 		draw_relic(game, index)
 
 	var selection := Registry.definition(game.selected_relic)
@@ -85,7 +92,7 @@ static func draw_selection(game, selection: Dictionary) -> void:
 	for index in range(lines.size()):
 		view.text(game, Vector2(302, 298 + index * 12), lines[index], 11, view.CREAM)
 	var combination := RelicInfo.pairing(game, id, true)
-	var tip := "The next basic attack spends the charge, even on a miss." if combination.is_empty() else combination
+	var tip := "A signature relic applies only to its heroine." if combination.is_empty() else combination
 	view.text(game, Vector2(302, 321), tip, 10, view.DIM)
 
 static func draw_starting_pocket(game) -> void:
@@ -139,7 +146,7 @@ static func draw_weapon(game) -> void:
 
 static func draw_relic(game, index: int) -> void:
 	var view = game.View
-	var relic_id: String = RELIC_IDS[index]
+	var relic_id: String = relic_options(game.hero)[index]
 	var item := Registry.definition(relic_id)
 	var rare: bool = item.rarity == "rare"
 	var selected: bool = game.selected_relic == relic_id
@@ -153,7 +160,7 @@ static func draw_relic(game, index: int) -> void:
 		var halo := Color(GOLD_ACTIVE, 0.43 + 0.13 * flare + 0.08 * sin(float(game.visual_clock) * 3.2))
 		game.draw_rect(box.grow(2.0 + flare * 2.5), halo, false, 2.0)
 	view.frame(game, box, fill.lightened(hover * 0.10), edge)
-	var rarity_box := Rect2(box.position + Vector2(12, 6), Vector2(146, 18))
+	var rarity_box := Rect2(box.position + Vector2(6, 6), Vector2(116, 18))
 	var rarity_color := Color("#425b7b") if rare else Color("#496b52")
 	game.draw_rect(rarity_box, rarity_color)
 	var rarity_point := rarity_box.position + Vector2(12.0, 9.0)
@@ -168,15 +175,15 @@ static func draw_relic(game, index: int) -> void:
 	var caption := "SELECTED · " + rarity if selected else rarity
 	view.centered(game, Rect2(rarity_box.position + Vector2(10, 0), rarity_box.size - Vector2(10, 0)), caption, 10, PAPER)
 
-	var center := box.position + Vector2(85, 44)
+	var center := box.position + Vector2(64, 44)
 	game.draw_circle(center, 17.0, Color("#ead0ac"), true, -1.0, true)
 	var lift := 2.0 * hover + 4.0 * flare
 	RelicInfo.draw_icon(game, relic_id, center - Vector2(0.0, lift), 34.0 + 2.5 * flare)
-	view.centered(game, Rect2(box.position + Vector2(4, 63), Vector2(162, 16)), item.name, 14, ROSEWOOD, true)
-	view.centered(game, Rect2(box.position + Vector2(3, 79), Vector2(164, 14)), RelicInfo.highlight(relic_id, 0), 10, ROSEWOOD)
-	view.centered(game, Rect2(box.position + Vector2(3, 92), Vector2(164, 12)), RelicInfo.highlight(relic_id, 1), 9, Color("#71515b"))
+	view.centered(game, Rect2(box.position + Vector2(2, 63), Vector2(124, 16)), item.name, 12, ROSEWOOD, true)
+	view.centered(game, Rect2(box.position + Vector2(2, 79), Vector2(124, 14)), RelicInfo.highlight(relic_id, 0), 9, ROSEWOOD)
+	view.centered(game, Rect2(box.position + Vector2(2, 92), Vector2(124, 12)), RelicInfo.highlight(relic_id, 1), 9, Color("#71515b"))
 	if selected:
-		view.diamond(game, box.position + Vector2(153, 37), 4.0, Color("#b37742"))
+		view.diamond(game, box.position + Vector2(116, 37), 4.0, Color("#b37742"))
 
 static func draw_gear(canvas: Node2D, center: Vector2, index: int, diameter: float) -> void:
 	var source: Rect2 = GEAR_REGIONS[index]

@@ -92,12 +92,12 @@ func test_meteor(game) -> void:
 
 func test_snare(game) -> void:
 	prepare(game, 3, Talents.SNARE_BLOOM)
-	actor(game, Vector2(258, 216))
-	var outer := actor(game, Vector2(258, 262))
+	actor(game, Vector2(280, 216))
+	var outer := actor(game, Vector2(280, 262))
 	game.act("skill")
 	game.abilities.tick(game, 0.24)
 	expect(not game.talents.bloom.is_empty() and not Statuses.has_foe(outer, Statuses.ROOT),
-		"Snare Bloom was not scheduled independently of the original trap.")
+		"Snare Bloom was not scheduled at the dash endpoint.")
 	game.checkpoint()
 	game.resume_run()
 	game.barrels.clear()

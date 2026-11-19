@@ -76,6 +76,10 @@ static func draw_world_ui(game) -> void:
 			if game.floor_manifest.nodes.has(exit_id):
 				var node: Dictionary = game.floor_manifest.nodes[exit_id]
 				label = KIND_LABELS[node.kind]
+				match int(node.get("optional_stage", -1)):
+					0: label = "Optional boss route"
+					1: label = "Continue detour"
+					2: label = "Enter hidden arena"
 				if int(game.floor_manifest.nodes[game.room_id].branch) == 1 and int(node.branch) == 0:
 					label = "Rejoin main route"
 				arcade_gate = ArcadeCatalog.id_for_node(node)

@@ -142,6 +142,8 @@ func cross_line(game, source: String, line: Dictionary, samples: Array[Dictionar
 			victims.append(foe)
 	if victims.is_empty():
 		return
+	if game.get("talents") != null:
+		game.talents.arm_snare_bloom(game.target(victims[0]))
 	lines.erase(source)
 	_pulses.append(make_line(from, to, line.evolved, PULSE_TIME))
 	var power: int = game.player_hit_amount(maxi(1, ARROW_DAMAGE + int(game.bonus))) if line.evolved else 0

@@ -111,14 +111,17 @@ func verify() -> void:
 		return
 
 	var bell = actor(Encounters.CLOCKWORK, 3, Vector2(300, 190))
-	tick(game, bell, 0.01)
+	game.active_biome = Encounters.CLOCKWORK
+	game.foes = [bell]
+	game.room_arrival = 0.0
+	game.update_foes(0.01)
 	var slow: float = bell.duration
 	if not require(bell.move == "hand", "Late Bell did not wind up its clock hand"):
 		return
 	bell.hp = 50
 	bell.phase = Geometry.APPROACH
 	bell.clock = 0.0
-	tick(game, bell, 0.01)
+	game.update_foes(0.01)
 	if not require(bell.duration < slow, "Late Bell did not accelerate a phase-two beat"):
 		return
 	print("PASS: Mushroom and Clockwork attacks, defense, cover, boss pose timing, add limits and phase tempos.")
