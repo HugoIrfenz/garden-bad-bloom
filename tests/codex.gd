@@ -19,7 +19,7 @@ func run() -> void:
 	if not require(game.screen == "codex", "Garden Codex link did not open"):
 		return
 	game.tap(game.CodexView.BIOME_NEXT.get_center())
-	game.tap(game.CodexView.entry_rect(3).get_center())
+	game.tap(game.CodexView.entry_rect(3, game.codex.entries(1).size()).get_center())
 	if not require(game.codex_biome == 1 and game.codex_kind == 3, "Codex page or entry was not selected"):
 		return
 	game.tap(game.CodexView.BACK.get_center())
@@ -33,6 +33,17 @@ func run() -> void:
 		return
 	if not require(not reload.entries(0)[3].discovered and not reload.entries(1)[0].discovered,
 			"Discovering early enemies revealed other entries"):
+		return
+	var boss_id: String = game.OptionalBosses.QUEEN
+	reload.observe([{"optional_boss": boss_id, "optional_lesson": 0, "biome": 0, "kind": 0}])
+	if not require(not reload.entries(0)[-2].discovered, "An approach room revealed its boss early"):
+		return
+	reload.observe([{"optional_boss": boss_id, "boss": true}])
+	reload = game.Codex.new()
+	reload.load_local()
+	var entry: Dictionary = reload.entries(0)[-2]
+	if not require(entry.optional_boss == boss_id and entry.discovered and not reload.entries(0).back().discovered,
+			"Optional encounter discovery did not persist independently"):
 		return
 	print("PASS: live Garden Codex navigation, hidden entries, and local discovery persistence.")
 	quit()

@@ -76,22 +76,23 @@ const ARENAS = {
 
 static var loaded_encounter := ""
 static var loaded_arena: Texture2D
-static var loaded_sheet: Texture2D
-
-static func load_encounter_art(id: String) -> void:
-	if id == loaded_encounter:
-		return
-	loaded_encounter = id
-	loaded_arena = load(ARENAS[id]) as Texture2D if ARENAS.has(id) else null
-	loaded_sheet = load(SPRITES[id]) as Texture2D if SPRITES.has(id) else null
+static var loaded_sheets: Dictionary = {}
 
 static func arena_texture(id: String) -> Texture2D:
-	load_encounter_art(id)
+	if id != loaded_encounter:
+		loaded_encounter = id
+		loaded_arena = load(ARENAS[id]) as Texture2D if ARENAS.has(id) else null
 	return loaded_arena
 
 static func draw_pose(canvas: Node2D, id: String, frame: int, feet: Vector2, alpha := 1.0, height := 92.0) -> bool:
-	load_encounter_art(id)
-	var sheet := loaded_sheet
+	if not SPRITES.has(id):
+		return false
+	if not loaded_sheets.has(id):
+		# A Codex page can show both bosses from its biome in one draw.
+		if loaded_sheets.size() >= 2:
+			loaded_sheets.erase(loaded_sheets.keys().front())
+		loaded_sheets[id] = load(SPRITES[id]) as Texture2D
+	var sheet: Texture2D = loaded_sheets[id]
 	if sheet == null:
 		return false
 	var cell := sheet.get_size() / Vector2(4.0, 2.0)
