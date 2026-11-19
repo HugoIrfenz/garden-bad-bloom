@@ -1039,6 +1039,8 @@ func handle_tap(pos: Vector2) -> void:
 				return
 			elif optional_arena_boss() == OptionalBosses.VELVET and OptionalBosses.sever_velvet_string(self, pos):
 				return
+			elif OptionalBosses.break_bride_ribbon(self, pos):
+				return
 			elif (pending_chest or uses_room_choice()) and Rect2(chest_position + Vector2(-39, -69), Vector2(78, 89)).has_point(pos):
 				interact()
 			elif click_room_exit(pos):
@@ -1198,6 +1200,8 @@ func interact() -> void:
 	if optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self):
 		return
 	if optional_arena_boss() == OptionalBosses.VELVET and OptionalBosses.sever_velvet_string(self):
+		return
+	if OptionalBosses.break_bride_ribbon(self):
 		return
 	if pending_chest:
 		open_chest()

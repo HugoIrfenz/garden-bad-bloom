@@ -169,6 +169,8 @@ static func advance(game, foe: Dictionary, delta := 0.0) -> void:
 		direction = Vector2.DOWN
 	var attack := int(foe.get("optional_lesson", posmod(int(foe.get("optional_cycle", 0)), 3)))
 	var duration := WINDUP if attack == 0 else 1.05
+	if foe.optional_boss == BRIDE and attack == 1:
+		foe.erase("bride_ribbon_broken")
 	if foe.optional_boss == MOTHER and attack == 1:
 		var nearest := INF
 		for point: Vector2 in MUSHROOMS:
@@ -480,7 +482,7 @@ static func release_bride(game, foe: Dictionary, origin: Vector2, direction: Vec
 				projectile(game, origin, direction.rotated(index * 0.22), 232.0, 1.45, 13)
 		1:
 			var knot := Vector2(foe.tx, foe.ty)
-			if game.player.distance_to(knot) < 42.0:
+			if not foe.get("bride_ribbon_broken", false) and game.player.distance_to(knot) < 42.0:
 				var before: int = game.hp
 				game.damage_hero(10, origin)
 				if game.hp < before and game.hp > 0:
@@ -491,6 +493,21 @@ static func release_bride(game, foe: Dictionary, origin: Vector2, direction: Vec
 					if Geometry.segment_gap(game.player, lane[index - 1], lane[index]) <= 23.0:
 						game.damage_hero(19, origin)
 						return
+
+static func break_bride_ribbon(game, tap := Vector2.INF) -> bool:
+	for foe: Dictionary in game.foes:
+		if foe.get("optional_boss") != BRIDE or int(foe.hp) <= 0 or int(foe.phase) != Geometry.WINDUP:
+			continue
+		if int(foe.get("optional_attack", -1)) != 1 or foe.get("bride_ribbon_broken", false):
+			continue
+		var knot := Vector2(foe.tx, foe.ty)
+		if game.player.distance_to(knot) > 42.0 or (tap.is_finite() and tap.distance_to(knot) > 24.0):
+			continue
+		foe.bride_ribbon_broken = true
+		game.sound.play("boss_break")
+		game.checkpoint()
+		return true
+	return false
 
 static func release_hour(game, foe: Dictionary, origin: Vector2, direction: Vector2, second: bool) -> void:
 	var target := Vector2(foe.tx, foe.ty)
@@ -900,6 +917,11 @@ static func warn_bride(game, foe: Dictionary, canvas: Node2D, origin: Vector2, d
 				canvas.draw_line(origin, end, pink, 1.5, true)
 		1:
 			var knot := Vector2(foe.tx, foe.ty)
+			if foe.get("bride_ribbon_broken", false):
+				canvas.draw_arc(knot, 33.0, -0.9, 1.9, 18, Color(pink, 0.55), 2.0, true)
+				canvas.draw_arc(knot, 35.0, 2.2, 4.9, 18, Color(pink, 0.55), 2.0, true)
+				return
+			canvas.draw_rect(Rect2(knot - Vector2(8, 8), Vector2(16, 16)), pink, false, 2.0)
 			canvas.draw_circle(knot, 42.0, Geometry.WARNING_FILL)
 			canvas.draw_arc(knot, 42.0, 0.0, TAU, 48, pink, 2.0, true)
 			canvas.draw_arc(knot, 42.0 * clampf(float(foe.clock) / float(foe.duration), 0.0, 1.0), 0.0, TAU, 32, pink, 1.5, true)

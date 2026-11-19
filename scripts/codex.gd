@@ -62,7 +62,7 @@ const OPTIONAL_ENTRIES = {
 		["madam_black_velvet", "Madam Black Velvet", "Leave the spotlight before it strikes. Once it reveals a puppet, interact beside the string to cut it."],
 	],
 	3: [
-		["bride_of_thorns", "Bride of Thorns", "Step beyond the shrinking ribbon knot before it closes. Wait out both thorn lanes after her veil tears, then strike during her recovery."],
+		["bride_of_thorns", "Bride of Thorns", "Tap the ribbon knot while nearby to break it, or step beyond it before it closes. Wait out both thorn lanes after her veil tears, then strike during her recovery."],
 		["antlered_choir", "The Antlered Choir", "Interact beside the bells to silence them. Each muted bell shortens the charge after the Choir's chest flower lights up."],
 	],
 	2: [
