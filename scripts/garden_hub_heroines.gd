@@ -1,10 +1,11 @@
 extends RefCounted
 
 const Art = preload("res://scripts/garden_art.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const PERIOD := 31.0
 const EMOTE_TIME := 1.75
-const HEIGHTS := [74.0, 76.0, 68.0, 76.0, 75.0]
-const IDLE_FACING := [Vector2.RIGHT, Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.LEFT]
+const HEIGHTS := [74.0, 76.0, 68.0, 76.0, 75.0, 64.0, 70.0, 82.0]
+const IDLE_FACING := [Vector2.RIGHT, Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.LEFT, Vector2.RIGHT, Vector2.LEFT, Vector2.RIGHT]
 
 # Angela meets Nixia near the west path. Vivianne meets Zaria by the
 # east path. Virelia tends the edge of the fountain between visits.
@@ -24,11 +25,22 @@ const ROUTES := [
 	[[0.0, Vector2(724, 280)], [3.3, Vector2(724, 280)], [8.5, Vector2(634, 257)],
 		[12.0, Vector2(634, 257)], [16.7, Vector2(719, 303)], [20.2, Vector2(719, 303)],
 		[26.4, Vector2(747, 226)], [27.9, Vector2(747, 226)], [31.0, Vector2(724, 280)]],
+	[[0.0, Vector2(132, 290)], [1.6, Vector2(132, 290)], [6.6, Vector2(225, 302)],
+		[10.1, Vector2(225, 302)], [16.0, Vector2(277, 259)], [19.4, Vector2(277, 259)],
+		[25.2, Vector2(164, 259)], [27.1, Vector2(164, 259)], [31.0, Vector2(132, 290)]],
+	[[0.0, Vector2(561, 207)], [2.8, Vector2(561, 207)], [7.8, Vector2(609, 222)],
+		[11.7, Vector2(609, 222)], [16.2, Vector2(537, 244)], [19.0, Vector2(537, 244)],
+		[26.1, Vector2(489, 212)], [28.7, Vector2(489, 212)], [31.0, Vector2(561, 207)]],
+	[[0.0, Vector2(776, 244)], [3.1, Vector2(776, 244)], [9.8, Vector2(660, 306)],
+		[13.1, Vector2(660, 306)], [19.7, Vector2(586, 284)], [23.2, Vector2(586, 284)],
+		[29.3, Vector2(776, 244)], [31.0, Vector2(776, 244)]],
 ]
 const EMOTES := [
 	[[6.4, 0], [15.3, 2], [25.3, 1]], [[9.2, 2], [20.0, 3]],
 	[[7.2, 1], [14.4, 2], [24.1, 1]], [[7.8, 0], [17.0, 3], [24.6, 0]],
 	[[10.2, 3], [18.1, 1], [26.5, 2]],
+	[[7.3, 1], [17.1, 0], [25.4, 2]], [[8.8, 3], [17.0, 2], [26.5, 0]],
+	[[1.1, 2], [11.0, 1], [20.4, 3]],
 ]
 
 static func pose(index: int, phase: float) -> Dictionary:
@@ -54,7 +66,8 @@ static func draw(game) -> void:
 	var phase := fposmod(clock, PERIOD)
 	var actors: Array[Dictionary] = []
 	for index in ROUTES.size():
-		actors.append(pose(index, phase))
+		if GuestRoster.is_unlocked(game.profile, index):
+			actors.append(pose(index, phase))
 	actors.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.feet.y < b.feet.y)
 	for actor: Dictionary in actors:
 		draw_heroine(game, actor, phase)
@@ -87,6 +100,8 @@ static func react_at(game, point: Vector2) -> void:
 	var front := -1
 	var lowest := -INF
 	for index in ROUTES.size():
+		if not GuestRoster.is_unlocked(game.profile, index):
+			continue
 		var feet: Vector2 = pose(index, phase).feet
 		var height: float = HEIGHTS[index]
 		var hitbox := Rect2(feet - Vector2(27, height), Vector2(54, height + 10))

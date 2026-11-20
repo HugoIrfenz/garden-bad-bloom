@@ -7,6 +7,7 @@ const Relics = preload("res://scripts/relic_effects.gd")
 const Ultimates = preload("res://scripts/hero_ultimates.gd")
 const Dungeon = preload("res://scripts/dungeon_generation.gd")
 const RunItems = preload("res://scripts/run_items.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const GARDEN_EVENT_KEY = "forgotten_event_id"
 const MUSHROOM_EVENT_KEY = "mushroom_event_id"
 const CLOCKWORK_EVENT_KEY = "clockwork_event_id"
@@ -246,13 +247,15 @@ static func preview(game, index: int) -> Dictionary:
 	var action: Dictionary = actions[index]
 	var hp = int(game.hp)
 	var petals = int(game.petals)
-	var resource = int(game.resource)
+	var resource := int(game.resource)
 	var bonus = int(game.bonus)
 	var hp_delta := int(action.get("hp", 0))
 	var heal: int = game.healing_amount(Economy.event_heal(hp_delta), "event") if hp_delta > 0 else hp_delta
 	var next_hp := int(hp) + heal
 	var next_petals = petals + Economy.event_petals(int(action.get("petals", 0)))
-	var next_resource = mini(resource + int(action.get("resource", 0)), Ultimates.CHARGE)
+	var resource_delta := int(action.get("resource", 0))
+	var luna: bool = game.hero == GuestRoster.LUNA
+	var next_resource := resource if luna else mini(resource + resource_delta, Ultimates.CHARGE)
 	var next_bonus = bonus + int(action.get("bonus", 0))
 	var relic_id = str(action.get("relic", ""))
 	var relic = Relics.definition(relic_id)
@@ -270,8 +273,10 @@ static func preview(game, index: int) -> Dictionary:
 		blocked = "Requires at least %d HP" % (1 - int(action.get("hp", 0)))
 	elif next_petals < 0:
 		blocked = "Requires %d Petals" % -int(action.petals)
+	elif luna and resource_delta < 0:
+		blocked = "Needs class charge"
 	elif next_resource < 0:
-		blocked = "Requires %d %s" % [-int(action.resource), game.RESOURCES[game.hero]]
+		blocked = "Requires %d %s" % [-resource_delta, game.RESOURCES[game.hero]]
 	elif spends_item and spent_item.is_empty():
 		blocked = "Requires an item in your pocket"
 	elif not relic.is_empty() and game.relics.has_relic(relic_id):
@@ -280,7 +285,12 @@ static func preview(game, index: int) -> Dictionary:
 		blocked = "Pocket already holds %s" % RunItems.ITEMS[game.pocket.held].name
 	elif not starts_encounter and not starts_game and next_hp <= hp and next_petals <= petals and next_resource <= resource \
 			and next_bonus <= bonus and relic.is_empty() and item.is_empty():
-		blocked = game.curses.healing_block("event") if hp_delta > 0 else "Resource already full"
+		if hp_delta > 0:
+			blocked = game.curses.healing_block("event")
+		elif luna and resource_delta > 0:
+			blocked = "Frenzy charges from pistol hits"
+		else:
+			blocked = "Resource already full"
 		if blocked.is_empty():
 			blocked = "Already at full HP"
 

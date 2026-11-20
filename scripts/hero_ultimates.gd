@@ -2,20 +2,33 @@ extends RefCounted
 
 const Geometry = preload("res://scripts/forgotten_encounters.gd")
 const Abilities = preload("res://scripts/hero_abilities.gd")
+const Elegy = preload("res://scripts/elegy_magic.gd")
 const Statuses = preload("res://scripts/combat_statuses.gd")
 const Visuals = preload("res://scripts/hero_combat_visuals.gd")
-const NAMES = ["Last Stand", "Elegy of Thorns", "SECURITY BREACH", "Perfect Bloom", "Beautiful Disaster"]
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const SPIN_FIRST_BEAT := 0.10
+const SPIN_INTERVAL := 0.34
+const SPIN_DIZZY_THRESHOLD := 2.7
+const SPIN_LIMIT := 4.2
+const SPIN_HEAL_INTERVAL := 2.0
+const REFRAIN_DELAY := 0.54
+const NAMES = ["Last Stand", "Elegy of Thorns", "SECURITY BREACH", "Perfect Bloom", "Beautiful Disaster", "Whirl of Ruin", "Holy Transcendence", "Frenzy Shift"]
 const CHARGE = 5
-const AURA_TIME = 4.4
+const AURA_TIME = 3.0
+const BLADE_WAVE_DAMAGE := 23
+const VALKYRIE_RECOVERY := 12.0
+const BREACH_RECOVERY := 12.0
+const BREACH_TIME := 0.92
 const VERSE_BEATS = [0.30, 0.73, 1.17]
 const COMBO_BEATS = [0.13, 0.29, 0.45, 0.63]
-const OVERCLOCK_BEATS = [0.08, 0.18, 0.30, 0.44]
+const BREACH_DAMAGE := [4, 3, 4, 9]
 const ARROW_BEAT = [0.18]
 const DISASTER_BEATS = [0.08, 0.34, 0.60]
 const DISASTER_DASH_TIME = 0.14
 const CUTIN_DURATION = 0.92
 const ELEGY_RADIUS = 57.0
 const BREACH_RADIUS = 65.0
+const OVERCLOCK_RADIUS := 82.0
 const VOLLEY_TURNS = [-0.42, -0.21, 0.0, 0.21, 0.42]
 const BLOOM_SPEED = 365.0
 const BLOOM_LIFE = 0.83
@@ -30,8 +43,16 @@ var _cast_serial = 0
 var _foe_serial = 0
 var cue_time = 0.0
 var cue_hero = -1
+var valkyrie_recovery := 0.0
+var breach_recovery := 0.0
 
-func reset() -> void:
+func reset(keep_recovery := false) -> void:
+	if not keep_recovery:
+		valkyrie_recovery = 0.0
+		breach_recovery = 0.0
+	else:
+		var interrupted: int = cue_hero if cue_time > 0.0 else int(_effect.get("hero", -1))
+		begin_recovery(interrupted)
 	_effect.clear()
 	_launches.clear()
 	_cast_serial = 0
@@ -42,7 +63,7 @@ func reset() -> void:
 func snapshot() -> Dictionary:
 	return {"effect": _effect.duplicate(true), "launches": _launches.duplicate(true),
 		"cast_serial": _cast_serial, "foe_serial": _foe_serial,
-		"cue_time": cue_time, "cue_hero": cue_hero}
+		"cue_time": cue_time, "cue_hero": cue_hero, "valkyrie_recovery": valkyrie_recovery, "breach_recovery": breach_recovery}
 
 func restore(data: Variant) -> void:
 	if not data is Dictionary:
@@ -54,6 +75,11 @@ func restore(data: Variant) -> void:
 	_launches = launches.duplicate(true) if launches is Array else []
 	for launch: Dictionary in _launches:
 		launch.contacts = launch.contacts.map(func(id): return int(id))
+	valkyrie_recovery = clampf(float(data.get("valkyrie_recovery", 0.0)), 0.0, VALKYRIE_RECOVERY)
+	breach_recovery = clampf(float(data.get("breach_recovery", 0.0)), 0.0, BREACH_RECOVERY)
+	match int(_effect.get("hero", -1)):
+		0: _effect.duration = AURA_TIME
+		2: _effect.duration = BREACH_TIME
 	_cast_serial = maxi(0, int(data.get("cast_serial", 0)))
 	_foe_serial = maxi(0, int(data.get("foe_serial", 0)))
 	cue_hero = clampi(int(data.get("cue_hero", -1)), -1, NAMES.size() - 1)
@@ -69,26 +95,58 @@ func restore(data: Variant) -> void:
 func locks_movement() -> bool:
 	return cue_time > 0.0 or not (_effect.get("dash", {}) as Dictionary).is_empty()
 
+func valkyrie_active() -> bool:
+	return int(_effect.get("hero", -1)) == 0
+
+func mina_spinning() -> bool:
+	return int(_effect.get("hero", -1)) == GuestRoster.MINA
+
+func recovery_left(hero: int) -> float:
+	match hero:
+		0: return valkyrie_recovery
+		2: return breach_recovery
+	return 0.0
+
+static func recovery_duration(hero: int) -> float:
+	match hero:
+		0: return VALKYRIE_RECOVERY
+		2: return BREACH_RECOVERY
+	return 0.0
+
+func begin_recovery(hero: int) -> void:
+	match hero:
+		0: valkyrie_recovery = VALKYRIE_RECOVERY
+		2: breach_recovery = BREACH_RECOVERY
+
 func can_cast(game) -> bool:
-	return cue_time <= 0.0 and _effect.is_empty() and _launches.is_empty() and game.resource >= CHARGE \
+	return game.hero not in [GuestRoster.WHI, GuestRoster.LUNA] and recovery_left(game.hero) <= 0.0 \
+		and cue_time <= 0.0 and _effect.is_empty() and _launches.is_empty() and game.resource >= CHARGE \
 		and game.dash_remaining <= 0.0 and not game.abilities.locks_movement()
 
 func cast(game) -> bool:
 	if not can_cast(game):
 		return false
-	cue_hero = int(game.hero)
-	cue_time = CUTIN_DURATION * (0.75 if cue_hero == 0 else 1.0)
+	begin_cutin(int(game.hero))
 	game.resource = 0
 	return true
+
+func begin_cutin(hero: int) -> void:
+	cue_hero = hero
+	cue_time = CUTIN_DURATION * (0.75 if hero == 0 else 1.0)
 
 func tick_cutin(game, delta: float) -> bool:
 	if cue_time <= 0.0:
 		return false
 	cue_time = maxf(0.0, cue_time - delta)
 	if cue_time <= 0.0:
-		var hero = cue_hero
+		var hero: int = cue_hero
 		cue_hero = -1
-		activate_cast(game, hero)
+		if hero == GuestRoster.WHI:
+			game.guest_combat.begin_trance(game)
+		elif hero == GuestRoster.LUNA:
+			game.luna_combat.transform(game)
+		else:
+			activate_cast(game, hero)
 	return true
 
 func activate_cast(game, hero: int) -> void:
@@ -108,6 +166,8 @@ func activate_cast(game, hero: int) -> void:
 		0:
 			_effect.counter = false
 			_effect.duration = AURA_TIME
+			game.attack_time = minf(float(game.attack_time), 0.17)
+			game.skill_time = maxf(0.0, float(game.skill_time) - 1.0)
 			add_bolt(game, origin, facing, "blade_wave", 460.0, 0.55)
 		1:
 			_effect.duration = 1.48
@@ -115,9 +175,12 @@ func activate_cast(game, hero: int) -> void:
 			for site in elegy_landmarks(game):
 				zones.append([site.x, site.y])
 			_effect.zones = zones
+			if Elegy.has_refrain(game):
+				_effect.refrain_step = 0
+				_effect.duration = 1.98
 		2:
 			_effect.orchid_overclock = game.abilities.take_orchid_overclock(game)
-			_effect.duration = 0.66 if _effect.orchid_overclock else 0.92
+			_effect.duration = BREACH_TIME
 		3:
 			_effect.duration = 1.13
 		4:
@@ -127,6 +190,8 @@ func activate_cast(game, hero: int) -> void:
 			var trail: Array[Vector2] = game.abilities.take_paint_trail()
 			if not trail.is_empty():
 				_effect.trail = [[trail[0].x, trail[0].y], [trail[1].x, trail[1].y]]
+		GuestRoster.MINA:
+			_effect.duration = SPIN_LIMIT
 	game.sound.hero_ultimate(hero)
 
 static func elegy_landmarks(game) -> Array[Vector2]:
@@ -156,9 +221,11 @@ func counter_bonus() -> int:
 static func mark_foe(foe: Dictionary, duration: float) -> void:
 	foe.camellia_mark = maxf(float(foe.get("camellia_mark", 0.0)), duration)
 
-func tick(game, delta: float) -> void:
+func tick(game, delta: float, player_before := Vector2.INF) -> void:
 	if tick_cutin(game, delta):
 		return
+	valkyrie_recovery = maxf(0.0, valkyrie_recovery - delta)
+	breach_recovery = maxf(0.0, breach_recovery - delta)
 	for foe: Dictionary in game.foes:
 		if foe.has("camellia_mark"):
 			foe.camellia_mark = maxf(0.0, float(foe.camellia_mark) - delta)
@@ -167,10 +234,13 @@ func tick(game, delta: float) -> void:
 		return
 	_effect.elapsed = float(_effect.elapsed) + delta
 	var hero = int(_effect.hero)
+	if hero == GuestRoster.MINA:
+		tick_mina_spin(game, player_before)
+		return
 	var beats: Array = []
 	match hero:
 		1: beats = VERSE_BEATS
-		2: beats = OVERCLOCK_BEATS if _effect.get("orchid_overclock", false) else COMBO_BEATS
+		2: beats = COMBO_BEATS
 		3: beats = ARROW_BEAT
 		4: beats = DISASTER_BEATS
 	while int(_effect.step) < beats.size() and float(_effect.elapsed) >= float(beats[int(_effect.step)]):
@@ -183,12 +253,44 @@ func tick(game, delta: float) -> void:
 				tick_disaster_dash(game, float(beats[step]))
 				begin_disaster_dash(game, step)
 		_effect.step = step + 1
+	if hero == 1 and _effect.has("refrain_step"):
+		var echo_step := int(_effect.refrain_step)
+		while echo_step < VERSE_BEATS.size() and float(_effect.elapsed) >= float(VERSE_BEATS[echo_step]) + REFRAIN_DELAY:
+			resolve_elegy(game, echo_step, true)
+			echo_step += 1
+		_effect.refrain_step = echo_step
 	if hero == 4:
 		tick_disaster_dash(game, float(_effect.elapsed))
 	if float(_effect.elapsed) >= float(_effect.duration):
 		_effect.clear()
+		begin_recovery(hero)
 
-func resolve_elegy(game, step: int) -> void:
+func tick_mina_spin(game, player_before: Vector2) -> void:
+	var elapsed := float(_effect.elapsed)
+	var prop: Vector2 = game.guest_combat.spin_prop(game, player_before)
+	if prop.is_finite():
+		_effect.clear()
+		game.guest_combat.stop_spin(game, prop, false)
+		return
+	var last_hit_time := minf(elapsed, SPIN_LIMIT)
+	var step := int(_effect.step)
+	var beat_time := SPIN_FIRST_BEAT + step * SPIN_INTERVAL
+	while beat_time <= last_hit_time:
+		if not game.guest_combat.spin(game, step):
+			_effect.clear()
+			game.guest_combat.stop_spin(game, Vector2.INF, beat_time >= SPIN_DIZZY_THRESHOLD)
+			return
+		step += 1
+		_effect.step = step
+		var passed_heal := floori(beat_time / SPIN_HEAL_INTERVAL)
+		if passed_heal > 0 and passed_heal > floori((beat_time - SPIN_INTERVAL) / SPIN_HEAL_INTERVAL):
+			game.guest_combat.recover_from_spin_hit(game)
+		beat_time = SPIN_FIRST_BEAT + step * SPIN_INTERVAL
+	if elapsed >= SPIN_LIMIT:
+		_effect.clear()
+		game.guest_combat.stop_spin(game, Vector2.INF, true)
+
+func resolve_elegy(game, step: int, echo := false) -> void:
 	var center = point_from(_effect.zones[step])
 	var other_zone: Vector2 = game.abilities.active_verse_zone()
 	for foe: Dictionary in game.foes:
@@ -201,17 +303,22 @@ func resolve_elegy(game, step: int) -> void:
 			if point.distance_to(prior) <= ELEGY_RADIUS and not Geometry.blocked(game, prior, point, 12.0):
 				overlapping = true
 				break
-		Abilities.hero_hit(game, foe, 13 + step * 3 + (9 if overlapping else 0) + game.bonus)
+		var power := 13 + step * 3 + (9 if overlapping else 0) + int(game.bonus)
+		Abilities.hero_hit(game, foe, power / 2 if echo else power)
 	game.abilities.note_elegy_crescendo(game, center)
+	if echo:
+		game.sound.play("vivianne", 0.89 + step * 0.07)
 
 func resolve_breach(game, step: int) -> void:
 	var center: Vector2 = game.player
 	var ending = step == COMBO_BEATS.size() - 1
+	var radius := breach_radius()
 	for foe: Dictionary in game.foes:
 		var point: Vector2 = game.target(foe)
-		if point.distance_to(center) > BREACH_RADIUS or Geometry.blocked(game, center, point, 15.0):
+		if point.distance_to(center) > radius or Geometry.blocked(game, center, point, 15.0):
 			continue
-		var damage = 7 + mini(int(game.bonus), 9) if not ending else 19 + int(game.bonus)
+		var bonus := int(game.bonus) if ending else mini(int(game.bonus), 9)
+		var damage := int(BREACH_DAMAGE[step]) + floori(bonus * 0.5)
 		if not Abilities.hero_hit(game, foe, damage):
 			continue
 		Abilities.stun_foe(foe, 0.24 if not ending else 0.36)
@@ -221,6 +328,9 @@ func resolve_breach(game, step: int) -> void:
 				direction = effect_direction()
 			_launches.append({"foe_id": foe_id(foe), "dx": direction.x, "dy": direction.y,
 				"left": 0.22, "contacts": []})
+
+func breach_radius() -> float:
+	return OVERCLOCK_RADIUS if _effect.get("orchid_overclock", false) else BREACH_RADIUS
 
 func tick_launches(game, delta: float) -> void:
 	for index in range(_launches.size() - 1, -1, -1):
@@ -242,7 +352,7 @@ func tick_launches(game, delta: float) -> void:
 			if id in launch.contacts:
 				continue
 			launch.contacts.append(id)
-			Abilities.hero_hit(game, other, 12 + mini(int(game.bonus), 10))
+			Abilities.hero_hit(game, other, 6 + floori(mini(int(game.bonus), 10) * 0.5))
 			Abilities.stun_foe(other, 0.18)
 		flying.x = finish.x
 		flying.y = finish.y
@@ -364,13 +474,20 @@ func resolve_bolt(game, bolt: Dictionary, begin: Vector2, end: Vector2) -> bool:
 			best = foe
 	if best.is_empty():
 		return false
-	var hit_count = int(best.get("ultimate_hits", 0)) if int(best.get("ultimate_cast", -1)) == int(bolt.ultimate_cast) else 0
-	best.ultimate_cast = int(bolt.ultimate_cast)
+	var cast_id := int(bolt.ultimate_cast)
+	var hit_count := cast_hit_count(best, cast_id)
+	var counts: Variant = best.get("ultimate_hit_counts", {})
+	if not counts is Dictionary:
+		counts = {}
+	counts[str(cast_id)] = hit_count + 1
+	best.ultimate_hit_counts = counts
+	# Keep these fields for compatibility with existing saves and consumers.
+	best.ultimate_cast = cast_id
 	best.ultimate_hits = hit_count + 1
 	var power = 13 + int(game.bonus)
 	var mark_bonus := 0
 	if bolt.ultimate == "blade_wave":
-		power = 24 + int(game.bonus)
+		power = BLADE_WAVE_DAMAGE + int(game.bonus)
 	elif bolt.ultimate == "bloom":
 		mark_bonus = Statuses.precision_mark_bonus(best)
 		if mark_bonus > 0:
@@ -394,7 +511,16 @@ func resolve_bolt(game, bolt: Dictionary, begin: Vector2, end: Vector2) -> bool:
 func hit_capped(foe: Dictionary, bolt: Dictionary) -> bool:
 	# Cap each volley at two hits per target, including bosses and trail echoes.
 	var limit := 1 if bolt.ultimate == "blade_wave" else 2
-	return int(foe.get("ultimate_cast", -1)) == int(bolt.ultimate_cast) and int(foe.get("ultimate_hits", 0)) >= limit
+	return cast_hit_count(foe, int(bolt.ultimate_cast)) >= limit
+
+static func cast_hit_count(foe: Dictionary, cast_id: int) -> int:
+	var counts: Variant = foe.get("ultimate_hit_counts", {})
+	if counts is Dictionary and counts.has(str(cast_id)):
+		return maxi(0, int(counts[str(cast_id)]))
+	# Old solo saves contain just the last cast and hit count.
+	if int(foe.get("ultimate_cast", -1)) == cast_id:
+		return maxi(0, int(foe.get("ultimate_hits", 0)))
+	return 0
 
 func foe_id(foe: Dictionary) -> int:
 	if not foe.has("ultimate_target_id"):
@@ -429,6 +555,15 @@ func draw_effects(game) -> void:
 		0:
 			var glow = 0.72 + sin(game.visual_clock * 10.0) * 0.16
 			var tint = Color("#ffdf9a") if _effect.counter else Color("#87caff")
+			var crest := center - Vector2(0, 24)
+			for flank: float in [-1.0, 1.0]:
+				for feather in range(4):
+					var base := (crest + Vector2(flank * (8.0 + feather * 3.0), feather * 3.0)).round()
+					var tip := (base + Vector2(flank * (29.0 - feather * 3.0),
+						-23.0 + feather * 6.0 + sin(game.visual_clock * 9.0 + feather * 0.5) * 4.0)).round()
+					canvas.draw_polyline(PackedVector2Array([base, ((base + tip) * 0.5 + Vector2(0, 5)).round(), tip]),
+						Color("#f3ce8d", glow * (0.62 - feather * 0.09)), 2.0)
+					Visuals.spark(canvas, tip, 3.0, Color("#fff0cd", glow * 0.70))
 			canvas.draw_arc(center, 41, 0.0, TAU, 44, Color(tint, glow), 2.1, true)
 			canvas.draw_arc(center, 47, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - progress), 44,
 				Color(tint, 0.77), 2.9, true)
@@ -438,14 +573,19 @@ func draw_effects(game) -> void:
 				var elapsed_from_hit = float(_effect.elapsed) - float(VERSE_BEATS[index])
 				var bloom = clampf(1.0 - elapsed_from_hit * 3.2, 0.0, 1.0) if elapsed_from_hit >= 0.0 else 0.19
 				Abilities.paint_ring(canvas, point, ELEGY_RADIUS, CRESCENDO, bloom)
+				if _effect.has("refrain_step"):
+					var age: float = elapsed_from_hit - REFRAIN_DELAY
+					if age >= 0.0 and age < 0.27:
+						Abilities.paint_ring(canvas, point, ELEGY_RADIUS * (0.72 + age), Color("#fce3ff"), 1.0 - age / 0.27)
 		2:
-			var accelerated := bool(_effect.get("orchid_overclock", false))
-			var phase = fposmod(float(_effect.elapsed) * (9.5 if accelerated else 6.6), 1.0)
+			var overclocked := bool(_effect.get("orchid_overclock", false))
+			var radius := breach_radius()
+			var phase = fposmod(float(_effect.elapsed) * 6.6, 1.0)
 			var stroke = effect_direction().angle() - 1.1 + phase * 1.8
-			canvas.draw_arc(center, BREACH_RADIUS * (0.77 + phase * 0.23), stroke,
+			canvas.draw_arc(center, radius * (0.77 + phase * 0.23), stroke,
 				stroke + 1.7, 25, Color(ORCHID, (1.0 - phase) * 0.85), 4.5, true)
-			if accelerated:
-				canvas.draw_arc(center, BREACH_RADIUS * (0.64 + phase * 0.24), stroke + PI,
+			if overclocked:
+				canvas.draw_arc(center, radius * (0.64 + phase * 0.24), stroke + PI,
 					stroke + PI + 1.3, 24, Color("#ffe2a4", (1.0 - phase) * 0.82), 2.4, true)
 		3:
 			if int(_effect.step) == 0:

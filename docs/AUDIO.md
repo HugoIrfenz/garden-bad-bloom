@@ -1,8 +1,8 @@
 # Original audio
 
-Garden: Bad Bloom contains 32 instrumental loops, five short prologue scores, and 51 sound effects. The original score in [the renderer](../tools/render_audio.cpp) synthesizes every cue locally. The shipped music is stereo 32 kHz Ogg Vorbis. Effects are stereo 32 kHz PCM WAV.
+Garden: Bad Bloom contains 45 instrumental loops, five short prologue scores, and 53 sound effects. The original score in [the renderer](../tools/render_audio.cpp) synthesizes every cue locally. The shipped music is stereo 32 kHz Ogg Vorbis. Effects are stereo 32 kHz PCM WAV.
 
-All 37 score cues are available as individual VHS tapes for the Garden Jukebox. The collection covers menus, chapters, bosses, the prologue, and the five Garden Games.
+All 50 score cues are available as individual VHS tapes for the Garden Jukebox. The collection covers menus, chapters, chapter and optional bosses, the prologue, and the five Garden Games. The **Hidden Bosses** button jumps to the optional-boss collection, and selecting an unowned tape opens its Seed Shop offer.
 
 ## Score
 
@@ -50,7 +50,7 @@ Run `/tmp/garden-render-audio --boss-only` to replace the seven boss cues, `--sf
 
 Run `/tmp/garden-render-audio --upgrade-only` to rebuild the chest upgrade chime and Petal Aegis impact sound.
 
-Run `/tmp/garden-render-audio --arcade-only` to rebuild the four new game tracks and nine effects.
+Run `/tmp/garden-render-audio --arcade-only` to rebuild the four new game tracks and nine effects. Run `/tmp/garden-render-audio --guest-only` to rebuild Mina's and Whi's combat sounds.
 
 ## Verification
 

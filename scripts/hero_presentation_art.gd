@@ -1,5 +1,9 @@
 extends RefCounted
 
+const GuestArt = preload("res://scripts/guest_hero_art.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const LunaArt = preload("res://scripts/luna_art.gd")
+
 const HERO_PORTRAITS = preload("res://assets/art/heroines/hero_portraits.png")
 const DEFEAT_PORTRAITS = preload("res://assets/art/heroines/defeat_portraits.png")
 const VICTORY_PORTRAITS = preload("res://assets/art/heroines/victory_portraits.png")
@@ -20,6 +24,17 @@ const VICTORY_REGIONS = [
 
 static func portrait(canvas: Node2D, index: int, area: Rect2, defeated := false,
 		close := false, tint := Color.WHITE) -> void:
+	if index == GuestRoster.LUNA:
+		var luna := LunaArt.defeat_source() if defeated else LunaArt.source(12)
+		var crop: Rect2 = luna.icon
+		if close and not defeated:
+			crop.size.y = roundf(crop.size.y * 0.58)
+		draw_portrait_region(canvas, luna.texture, area, crop, tint)
+		return
+	if GuestRoster.is_guest(index):
+		var art := GuestArt.defeat_source(index) if defeated else GuestArt.source(index, 12 if close else 0)
+		draw_portrait_region(canvas, art.texture, area, art.icon, tint)
+		return
 	var region: Rect2 = DEFEAT_REGIONS[index] if defeated else HERO_REGIONS[index]
 	if close:
 		region.size.y = roundf(region.size.y * 0.56)
@@ -27,6 +42,14 @@ static func portrait(canvas: Node2D, index: int, area: Rect2, defeated := false,
 	draw_portrait_region(canvas, texture, area, region, tint)
 
 static func victory(canvas: Node2D, index: int, area: Rect2, tint: Color) -> void:
+	if index == GuestRoster.LUNA:
+		var luna := LunaArt.source(13)
+		draw_portrait_region(canvas, luna.texture, area, luna.icon, tint)
+		return
+	if GuestRoster.is_guest(index):
+		var art := GuestArt.source(index, 13)
+		draw_portrait_region(canvas, art.texture, area, art.icon, tint)
+		return
 	draw_portrait_region(canvas, VICTORY_PORTRAITS, area, VICTORY_REGIONS[index], tint)
 
 static func draw_portrait_region(canvas: Node2D, texture: Texture2D, area: Rect2, region: Rect2,
@@ -37,6 +60,12 @@ static func draw_portrait_region(canvas: Node2D, texture: Texture2D, area: Rect2
 	canvas.draw_texture_rect_region(texture, pixel_rect(Rect2(base, target_size)), region, tint)
 
 static func eyes(canvas: Node2D, index: int, area: Rect2, tint: Color) -> void:
+	if index == GuestRoster.LUNA:
+		LunaArt.eyes(canvas, pixel_rect(area), tint)
+		return
+	if GuestRoster.is_guest(index):
+		GuestArt.eyes(canvas, index, area, tint)
+		return
 	var region: Rect2 = HERO_REGIONS[index]
 	var eye_heights := [179.0, 182.0, 182.0, 186.0, 194.0]
 	var crop_width := region.size.x - 16.0
@@ -47,6 +76,12 @@ static func eyes(canvas: Node2D, index: int, area: Rect2, tint: Color) -> void:
 
 static func ability(canvas: Node2D, index: int, ultimate: bool, center: Vector2,
 		diameter: float, tint := Color.WHITE) -> void:
+	if index == GuestRoster.LUNA:
+		LunaArt.icon(canvas, 14 if ultimate else 15, center, diameter, tint)
+		return
+	if GuestRoster.is_guest(index):
+		GuestArt.icon(canvas, index, 14 if ultimate else 15, center, diameter, tint)
+		return
 	var cell := ABILITY_ATLAS.get_size() / Vector2(5.0, 2.0)
 	var cell_index := Vector2(index, 1.0 if ultimate else 0.0)
 	var first := (cell_index * cell).round() + Vector2(3.0, 3.0)

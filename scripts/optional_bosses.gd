@@ -58,6 +58,28 @@ const SPRITES = {
 	LIBRARIAN: "res://assets/art/optional_bosses/nebula_librarian.png",
 	CHAIR: "res://assets/art/optional_bosses/empty_sixth_chair.png",
 }
+const SHEET_SIZE := Vector2(1774, 887)
+const POSE_GRID := Vector2(4, 2)
+# Atlas gutters were measured on the original art. Each entry gives the row
+# split and the three column splits for that row, in source pixels.
+const POSE_LAYOUTS := {
+	QUEEN: [443, [429, 890, 1316], [439, 898, 1322]],
+	MOTHER: [443, [422, 864, 1320], [425, 874, 1299]],
+	SCARECROW: [443, [445, 879, 1267], [460, 840, 1277]],
+	BANDIT: [443, [424, 895, 1313], [427, 856, 1291]],
+	BRASSWING: [443, [427, 911, 1293], [439, 892, 1326]],
+	HOUR: [443, [454, 880, 1334], [473, 922, 1330]],
+	BRIDE: [443, [427, 911, 1314], [463, 909, 1326]],
+	CHOIR: [430, [422, 857, 1316], [422, 882, 1318]],
+	PRINCE: [443, [437, 877, 1253], [408, 861, 1313]],
+	VELVET: [443, [397, 913, 1320], [380, 913, 1312]],
+	MOONS: [443, [427, 866, 1261], [421, 890, 1311]],
+	LIBRARIAN: [443, [422, 890, 1332], [414, 922, 1340]],
+	CHAIR: [426, [429, 921, 1309], [406, 863, 1375]],
+}
+# The raised staff and the next pose's cloak overlap in X, at different heights.
+const MOTHER_STAFF_SPLIT_Y := 110
+const MOTHER_CLOAK_SPLIT_X := 1291
 const ARENAS = {
 	QUEEN: "res://assets/art/optional_bosses/queen_arena.png",
 	MOTHER: "res://assets/art/optional_bosses/mother_arena.png",
@@ -84,23 +106,59 @@ static func arena_texture(id: String) -> Texture2D:
 		loaded_arena = load(ARENAS[id]) as Texture2D if ARENAS.has(id) else null
 	return loaded_arena
 
-static func draw_pose(canvas: Node2D, id: String, frame: int, feet: Vector2, alpha := 1.0, height := 92.0) -> bool:
+static func sprite_sheet(id: String) -> Texture2D:
 	if not SPRITES.has(id):
-		return false
+		return null
 	if not loaded_sheets.has(id):
 		# A Codex page can show both bosses from its biome in one draw.
 		if loaded_sheets.size() >= 2:
 			loaded_sheets.erase(loaded_sheets.keys().front())
 		loaded_sheets[id] = load(SPRITES[id]) as Texture2D
-	var sheet: Texture2D = loaded_sheets[id]
+	return loaded_sheets[id]
+
+static func pose_region(id: String, frame: int) -> Rect2:
+	var layout: Array = POSE_LAYOUTS.get(id, [])
+	if layout.is_empty() or frame < 0 or frame >= 8:
+		return Rect2()
+	var upper := frame < 4
+	var column := frame % 4
+	var columns: Array = layout[1 if upper else 2]
+	var left := 0.0 if column == 0 else float(columns[column - 1])
+	var right := SHEET_SIZE.x if column == 3 else float(columns[column])
+	var top := 0.0 if upper else float(layout[0])
+	var bottom := float(layout[0]) if upper else SHEET_SIZE.y
+	if id == MOTHER and frame == 3:
+		left = MOTHER_CLOAK_SPLIT_X
+	return Rect2(left, top, right - left, bottom - top)
+
+static func draw_pose(canvas: Node2D, id: String, frame: int, feet: Vector2, alpha := 1.0, height := 92.0) -> bool:
+	var source := pose_region(id, frame)
+	if not source.has_area():
+		return false
+	var sheet := sprite_sheet(id)
 	if sheet == null:
 		return false
-	var cell := sheet.get_size() / Vector2(4.0, 2.0)
-	var source := Rect2(cell * Vector2(frame % 4, floorf(float(frame) / 4.0)), cell)
-	var size := (cell * (height / cell.y)).round()
-	canvas.draw_texture_rect_region(sheet, Rect2((feet - Vector2(size.x * 0.5, size.y * 0.91)).round(), size),
-		source, Color(1.0, 1.0, 1.0, alpha))
+	var cell := SHEET_SIZE / POSE_GRID
+	var anchor := cell * Vector2(float(frame % 4) + 0.5, floorf(float(frame) / 4.0) + 0.91)
+	var scale := height / cell.y
+	var tint := Color(1.0, 1.0, 1.0, alpha)
+	if id == MOTHER and frame in [2, 3]:
+		var staff_split := float(POSE_LAYOUTS[MOTHER][1][2])
+		var upper_left := staff_split if frame == 3 else source.position.x
+		var lower_right := float(MOTHER_CLOAK_SPLIT_X) if frame == 2 else source.end.x
+		draw_pose_region(canvas, sheet, Rect2(upper_left, 0, source.end.x - upper_left, MOTHER_STAFF_SPLIT_Y),
+			feet, anchor, scale, tint)
+		draw_pose_region(canvas, sheet, Rect2(source.position.x, MOTHER_STAFF_SPLIT_Y,
+			lower_right - source.position.x, source.end.y - MOTHER_STAFF_SPLIT_Y), feet, anchor, scale, tint)
+	else:
+		draw_pose_region(canvas, sheet, source, feet, anchor, scale, tint)
 	return true
+
+static func draw_pose_region(canvas: Node2D, sheet: Texture2D, source: Rect2, feet: Vector2,
+		anchor: Vector2, scale: float, tint: Color) -> void:
+	var start := (feet + (source.position - anchor) * scale).round()
+	var end := (feet + (source.end - anchor) * scale).round()
+	canvas.draw_texture_rect_region(sheet, Rect2(start, end - start), source, tint, false, true)
 
 static func pose(foe: Dictionary, time: float) -> int:
 	if foe.get("optional_boss") == CHAIR and foe.get("optional_second", false):
@@ -245,8 +303,7 @@ static func release(game, foe: Dictionary) -> void:
 			if queen:
 				var offset: Vector2 = game.player - origin
 				if offset.length() <= 260.0 and offset.normalized().dot(direction) > 0.74 and not Geometry.blocked(game, origin, game.player, 14.0):
-					game.player = game.slide_with_cover(game.player, direction * (-64.0 if second else 64.0))
-					game.damage_hero(10, origin)
+					game.damage_hero(10, origin, {}, direction * (-64.0 if second else 64.0))
 			elif not on_safe_mushroom(game.player, second):
 				var hp_before: int = game.hp
 				game.damage_hero(14, origin)
@@ -337,8 +394,7 @@ static func release_moons(game, foe: Dictionary, origin: Vector2, direction: Vec
 		1:
 			var in_dark_half: bool = game.player.x < 387.0 if swapped else game.player.x > 477.0
 			if in_dark_half and game.player.distance_to(dark) <= 245.0 and not Geometry.blocked(game, game.player, dark, 14.0):
-				game.player = game.slide_with_cover(game.player, (dark - game.player).limit_length(88.0))
-				game.damage_hero(13, dark)
+				game.damage_hero(13, dark, {}, (dark - game.player).limit_length(88.0))
 		2:
 			var gap: Vector2 = game.player - origin
 			if gap.length() <= 164.0 and absf(direction.angle_to(gap)) <= 0.82 and not Geometry.blocked(game, origin, game.player, 14.0):
@@ -361,8 +417,7 @@ static func release_velvet(game, foe: Dictionary, origin: Vector2, direction: Ve
 		1:
 			var end: Vector2 = Geometry.clear_endpoint(game, origin, direction, 260.0, 14.0)
 			if Geometry.segment_gap(game.player, origin, end) <= 23.0:
-				game.player = game.slide_with_cover(game.player, (origin - game.player).limit_length(72.0))
-				game.damage_hero(13, origin)
+				game.damage_hero(13, origin, {}, (origin - game.player).limit_length(72.0))
 		2:
 			for index in range(VELVET_PUPPETS.size()):
 				if int(foe.get("velvet_severed", 0)) & (1 << index):
@@ -573,8 +628,7 @@ static func release_brasswing(game, foe: Dictionary, origin: Vector2, direction:
 		1:
 			var gap: Vector2 = game.player - origin
 			if gap.length() <= 116.0 and not Geometry.blocked(game, origin, game.player, 14.0):
-				game.player = game.slide_with_cover(game.player, gap.normalized() * 76.0)
-				game.damage_hero(12, origin)
+				game.damage_hero(12, origin, {}, gap.normalized() * 76.0)
 		2:
 			for angle: float in [-0.62, -0.37, -0.12, 0.12, 0.37, 0.62]:
 				projectile(game, origin, direction.rotated(angle), 295.0, 1.55, 13)
@@ -601,8 +655,9 @@ static func release_bandit(game, foe: Dictionary, origin: Vector2, direction: Ve
 		2:
 			var target := Vector2(foe.tx, foe.ty)
 			if second and game.player.distance_to(target) < 110.0 and not Geometry.blocked(game, game.player, target, 14.0):
-				var pull: Vector2 = (target - game.player).limit_length(58.0)
-				game.player = game.slide_with_cover(game.player, pull)
+				if not game.parry_hero_attack(target):
+					var pull: Vector2 = (target - game.player).limit_length(58.0)
+					game.player = game.slide_with_cover(game.player, pull)
 			var before: int = game.bolts.size()
 			projectile(game, origin, direction, 165.0, 2.55, 18)
 			game.bolts[before].radius = 29.0

@@ -11,8 +11,9 @@ const DIM_INK = Color("#715461")
 const PAPER = Color("#f8e8d2")
 const GOLD = Color("#ac7955")
 
-static func tab(index: int) -> Rect2:
-	return Rect2(49 + index * 155, 64, 147, 38)
+static func tab(index: int, count: int) -> Rect2:
+	var width := floorf((766.0 - float(count - 1) * 8.0) / count)
+	return Rect2(49.0 + index * (width + 8.0), 64, width, 38)
 
 static func row(index: int) -> Rect2:
 	return Rect2(49, 115 + index * 43, 258, 39)
@@ -30,7 +31,7 @@ static func tap(game, point: Vector2) -> void:
 		game.screen = "codex"
 		return
 	for index in range(game.NAMES.size()):
-		if tab(index).has_point(point):
+		if tab(index, game.NAMES.size()).has_point(point):
 			game.armory_hero = index
 			game.armory_entry = 0
 			return
@@ -50,7 +51,7 @@ static func draw(game) -> void:
 	view.frame(game, Rect2(305, 12, 254, 39), Color("#282032"))
 	view.centered(game, Rect2(305, 12, 254, 39), "Weapon Ledger", 24, view.CREAM, true)
 	for index in range(game.NAMES.size()):
-		view.button(game, tab(index), game.NAMES[index], index == hero)
+		view.button(game, tab(index, game.NAMES.size()), game.NAMES[index], index == hero)
 	for index in range(items.size()):
 		draw_row(game, items[index], index, selected == index)
 	draw_detail(game, items[selected])

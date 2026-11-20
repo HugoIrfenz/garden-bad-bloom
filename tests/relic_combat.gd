@@ -69,7 +69,8 @@ func avoid_real_bolt(game) -> bool:
 		"An actual dash contact did not grant Glass Eyelash or applied damage")
 
 func test_piercing_shot(game) -> bool:
-	start_with(game, game.Relics.GLASS_EYELASH, 1)
+	# Vivianne's former dodge is now Frost, so use Virelia's ranged dodge kit.
+	start_with(game, game.Relics.GLASS_EYELASH, 3)
 	if not avoid_real_bolt(game):
 		return false
 	game.foes.append(actor(Vector2(278, 140)))
@@ -84,7 +85,7 @@ func test_piercing_shot(game) -> bool:
 	game.checkpoint()
 	game.resume_run()
 	game.barrels.clear()
-	game.update_bolts(0.09)
+	game.update_bolts(0.12)
 	return require(game.foes[2].hp == initial_damage and game.foes[1].hp < 60
 		and game.foes[0].hp == 60 and game.bolts.is_empty(), "Saved projectile did not preserve its first contact and one extra pierce")
 

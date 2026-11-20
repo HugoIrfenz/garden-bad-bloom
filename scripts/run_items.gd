@@ -1,5 +1,6 @@
 extends RefCounted
 
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const IDS = ["royal_teacup", "clockwise_tonic", "petal_bomb"]
 const ICONS = preload("res://assets/art/items/pocket_items.png")
 const ICON_REGIONS = [Rect2(50, 138, 644, 515), Rect2(876, 22, 421, 664), Rect2(1491, 37, 630, 649)]
@@ -11,6 +12,7 @@ const ITEMS = {
 const TONIC_TIME = 6.0
 const TONIC_RECOVERY = 1.40
 const TONIC_MOVEMENT = 1.24
+const LUNA_TEA_HEAL := 8
 const BOMB_RADIUS = 72.0
 const BOMB_RANGE = 175.0
 const FLASH_TIME = 0.42
@@ -21,8 +23,14 @@ var flash := 0.0
 var last := ""
 var center := Vector2.ZERO
 
-static func card(item: String) -> Dictionary:
+static func effect_for(item: String, hero: int) -> String:
+	if item == "royal_teacup" and hero == GuestRoster.LUNA:
+		return "Restore up to %d HP" % LUNA_TEA_HEAL
+	return ITEMS[item].effect
+
+static func card(item: String, hero := -1) -> Dictionary:
 	var data: Dictionary = ITEMS[item].duplicate()
+	data.effect = effect_for(item, hero)
 	data.texture = ICONS
 	data.icon = ICON_REGIONS[IDS.find(item)]
 	data.kind = "Consumable"
@@ -58,6 +66,8 @@ func take(item: String) -> bool:
 func usable(game) -> bool:
 	match held:
 		"royal_teacup":
+			if game.hero == GuestRoster.LUNA:
+				return game.healing_amount(LUNA_TEA_HEAL) > 0
 			return game.resource < 3
 		"clockwise_tonic":
 			return haste <= 0.0
@@ -74,7 +84,10 @@ func consume(game) -> void:
 	flash = FLASH_TIME
 	match last:
 		"royal_teacup":
-			game.resource = 3
+			if game.hero == GuestRoster.LUNA:
+				game.hp += game.healing_amount(LUNA_TEA_HEAL)
+			else:
+				game.resource = 3
 			game.sound.play("reward")
 		"clockwise_tonic":
 			haste = TONIC_TIME

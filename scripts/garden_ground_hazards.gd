@@ -121,7 +121,7 @@ func tick(game, before: Vector2, delta: float) -> void:
 		if patch.phase == 2 and not patch.contact and Geometry.segment_gap(game.target(patch), before, game.player) <= RADIUS:
 			patch.contact = true
 			if str(patch.kind) == "roots":
-				if game.mercy <= 0.0:
+				if not game.parry_hero_attack(game.target(patch)) and game.mercy <= 0.0:
 					if game.combat_status.apply_hero(Statuses.ROOT, ROOT_DURATION, 1.0, "root_grapple", "hazard"):
 						game.sound.play("hurt", 0.78)
 			else:

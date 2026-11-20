@@ -47,7 +47,11 @@ func run() -> void:
 	game.enter_room()
 	game.foes[0].hp = 0
 	game._physics_process(0.016)
-	if not require(game.screen == "clear", "Boss defeat did not award a clear"):
+	if not require(game.boss_victory.left > 0.0, "Boss defeat animation did not start"):
+		return
+	game._physics_process(game.BossVictory.DURATION + 0.01)
+	game._physics_process(0.016)
+	if not require(game.screen == "clear", "Boss defeat did not award a clear after the animation"):
 		return
 	game.resume_run()
 	if not require(game.screen == "clear" and game.depth == 27, "Clear did not survive resume"):

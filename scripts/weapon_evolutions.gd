@@ -11,7 +11,7 @@ const RECIPES = {
 		"ingredients": [{"id": "rosebound_refrain", "chapter": 1}, {"id": "black_rose_ink", "chapter": 3}],
 		"mastery": 0},
 	2: {"id": "orchid_overclock", "name": "Orchid Overclock",
-		"description": "Land punches on three adjacent beats to prime a faster Security Breach. These gauntlets replace your current weapon.",
+		"description": "Land punches on three adjacent beats to widen the next Security Breach. These gauntlets replace your current weapon.",
 		"ingredients": [{"id": "orchid_punch_card", "chapter": 1}, {"id": "metronome_heart", "chapter": 2}], "mastery": 0},
 	3: {"id": "tidy_disaster", "name": "Tidy Disaster",
 		"description": "Each triggered tripwire fires one arrow sweep along the thread. The forge upgrades the equipped Snarewood Bow.",

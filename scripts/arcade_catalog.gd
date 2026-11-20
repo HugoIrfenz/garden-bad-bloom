@@ -1,5 +1,7 @@
 extends RefCounted
 
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const LUNA_ENCORE_PETALS := 10
 const BOARD := "cap_board"
 const PRIX := "petal_prix"
 const ENCORE := "clockwork_encore"
@@ -66,6 +68,11 @@ static func id_for_node(node: Dictionary) -> String:
 
 static func label(id: String, field: String, language: String) -> String:
 	return str(DATA[id][field][1 if language == "id" else 0])
+
+static func prize(game, id: String) -> String:
+	if id == ENCORE and game.hero == GuestRoster.LUNA:
+		return game.preferences.text("arcade.petals", {"amount": LUNA_ENCORE_PETALS})
+	return label(id, "prize", game.preferences.language)
 
 
 static func card(id: String) -> Dictionary:

@@ -1,10 +1,12 @@
 extends RefCounted
 
 const Relics = preload("res://scripts/relic_effects.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const Evolutions = preload("res://scripts/weapon_evolutions.gd")
 
 const STARTERS = [Relics.WEDDING_RING, Relics.GLASS_EYELASH, Relics.LAST_TEASPOON]
-const SIGNATURES = ["", Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON, Relics.IRIS_DICE]
+const SIGNATURES = ["", Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON,
+	Relics.IRIS_DICE, Relics.TEMPER_BELL, Relics.THREEFOLD_PRISM, Relics.MOONLIT_CARTRIDGE]
 const LEDGER_IDS = [
 	Relics.SIXTH_SEAT_TRINKET,
 	Relics.NEBULA_INDEX,
@@ -14,11 +16,12 @@ const LEDGER_IDS = [
 	Relics.THORN_VEIL,
 	Relics.CHOIR_ANTLER,
 	Relics.FEATHER_CROWN, Relics.HONEST_EYES, Relics.MOTHERCAP_VEIL, Relics.TRUFFLE_SATCHEL, Relics.BRASSWING_PIN, Relics.SECOND_CHANCE_DIAL,
-	Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON, Relics.IRIS_DICE,
+	Relics.ROSE_LENS, Relics.ORCHID_SPRING, Relics.CAMELLIA_RIBBON, Relics.IRIS_DICE, Relics.TEMPER_BELL, Relics.THREEFOLD_PRISM,
 	Relics.WEDDING_RING, Relics.GLASS_EYELASH, Relics.LAST_TEASPOON, Relics.HONEST_RECEIPT,
 	Relics.THORNMAIL, Relics.COUNTERCLOCK_LOCKET, Relics.GUARDIANS_LEDGER,
 	Relics.ROSEBOUND_REFRAIN, Relics.BLACK_ROSE_INK, Relics.ORCHID_PUNCH_CARD, Relics.METRONOME_HEART,
 	Relics.GLITTER_CRIME, Relics.PAINTED_EXIT,
+	Relics.MOONLIT_CARTRIDGE, Relics.WOLFBOUND_CHOKER,
 ]
 const TREASURE_RELICS = {
 	0: Relics.HONEST_RECEIPT,
@@ -39,6 +42,8 @@ static func hero_for(id: String) -> int:
 		return SIGNATURES.find(id)
 	if id == Relics.COUNTERCLOCK_LOCKET:
 		return 0
+	if id == Relics.WOLFBOUND_CHOKER:
+		return GuestRoster.LUNA
 	for hero_index: int in Evolutions.RECIPES:
 		for ingredient: Dictionary in Evolutions.RECIPES[hero_index].ingredients:
 			if ingredient.id == id and ingredient.get("kind", "relic") == "relic":
@@ -47,6 +52,9 @@ static func hero_for(id: String) -> int:
 
 static func can_offer(id: String, hero: int) -> bool:
 	if not Relics.DEFINITIONS.has(id):
+		return false
+	if hero >= 0 and not GuestRoster.has_dodge(hero) and id in [Relics.GLASS_EYELASH,
+			Relics.HONEST_EYES, Relics.FEATHER_CROWN, Relics.SECOND_CHANCE_DIAL]:
 		return false
 	var required_hero := hero_for(id)
 	return required_hero == -1 or required_hero == hero
@@ -58,6 +66,8 @@ static func treasure_offer(floor_index: int, hero: int, carried: Array[String]) 
 	return id
 
 static func boss_preference(floor_index: int, hero: int, carried: Array[String]) -> String:
+	if hero == GuestRoster.LUNA and floor_index == 0 and Relics.WOLFBOUND_CHOKER not in carried:
+		return Relics.WOLFBOUND_CHOKER
 	var milestone := Evolutions.chapter_ingredient(hero, floor_index)
 	if can_offer(milestone, hero) and milestone not in carried:
 		return milestone
@@ -92,6 +102,8 @@ static func source_lines(id: String, biomes: Array) -> Array[String]:
 		sources.append("Hollow Palace · The Crownless Prince.")
 	elif id == Relics.CHOIR_ANTLER:
 		sources.append("Bloodbloom Forest · The Antlered Choir.")
+	elif id == Relics.WOLFBOUND_CHOKER:
+		sources.append("Forgotten Garden · Boss chest when playing Luna.")
 	if id in STARTERS or id in SIGNATURES:
 		sources.append("Choose in Run Preparation.")
 	for floor_index: int in TREASURE_RELICS:
@@ -117,6 +129,8 @@ static func combinations(id: String) -> Array[String]:
 			notes.append("Last Teaspoon can use the 1 HP left by a lethal-hit save.")
 		Relics.LAST_TEASPOON:
 			notes.append("Angela’s Wedding Ring can leave you at 1 HP to prime the wider attack.")
+		Relics.GLASS_EYELASH:
+			notes.append("The perfect-dodge charge works with any basic weapon attack.")
 		Relics.THORNMAIL, Relics.COUNTERCLOCK_LOCKET:
 			var other := Relics.COUNTERCLOCK_LOCKET if id == Relics.THORNMAIL else Relics.THORNMAIL
 			notes.append("Iron Bouquet with %s makes reflected bolts plant thorns." % Relics.definition(other).name)

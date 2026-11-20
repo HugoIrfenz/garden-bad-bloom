@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Geometry = preload("res://scripts/forgotten_encounters.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const Statuses = preload("res://scripts/combat_statuses.gd")
 const FIRST_MILESTONE = "first_chapter"
 const SECOND_MILESTONE = "second_chapter"
@@ -13,6 +14,8 @@ const POCKET_METEOR = "pocket_meteor"
 const SNARE_BLOOM = "snare_bloom"
 const SEWING_THREAD = "sewing_thread"
 const INK_FOOTSTEPS = "ink_footsteps"
+const WIDE_SWING = "wide_swing"
+const GENTLE_LIGHT = "gentle_light"
 const WARM_TIME = 4.5
 const QUIET_TIME = 0.90
 const QUIET_POWER = 7
@@ -38,6 +41,10 @@ const CATALOG = [
 		"detail": "Dodge to paint a trail that slows pursuing foes for 1.65 seconds."},
 	{"id": SEWING_THREAD, "hero": 3, "name": "Sewing Thread", "branch": "Precision", "accent": Color("#eebac8"),
 		"milestone": SECOND_MILESTONE, "detail": "Connect two Tidy Arrangement dash endpoints into a single-use tripwire that roots crossing foes."},
+	{"id": WIDE_SWING, "hero": GuestRoster.MINA, "name": "Wide Swing", "branch": "Temper", "accent": Color("#ffc1a6"),
+		"detail": "Slam, Sweep and Whirl of Ruin reach 15% farther."},
+	{"id": GENTLE_LIGHT, "hero": GuestRoster.WHI, "name": "Gentle Light", "branch": "Mercy", "accent": Color("#c5edab"),
+		"detail": "Mercy deals more damage and still heals 1 HP on hit."},
 ]
 
 var chosen: Array[String] = []

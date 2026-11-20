@@ -20,6 +20,11 @@ func verify() -> void:
 		if node.kind == "treasure":
 			game.room_id = node.id
 			break
+	# Treasure rooms prefer their chapter relic while it is unowned. Carry it
+	# first so this fixture specifically exercises the weapon offer fallback.
+	var treasure_relic: String = game.RelicSources.treasure_offer(game.floor_index, game.hero, game.relics.owned)
+	if not treasure_relic.is_empty():
+		game.relics.equip(treasure_relic)
 	game.enter_room()
 	var offered: String = game.reward_weapon_id
 	if not check(game.Weapons.available(game.hero, "").has(offered), "Treasure did not promise a compatible weapon"):

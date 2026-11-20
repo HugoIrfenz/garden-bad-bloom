@@ -126,8 +126,8 @@ func verify() -> void:
 	boss.hp = 68
 	var second = Encounters.choose(boss)
 	boss.hp = 34
-	if not require(second == "echo" and Encounters.choose(boss) == "gravity",
-			"Bloomheart did not change attacks at 70 and 35 percent"):
+	if not require(second == "echo" and Encounters.choose(boss) == "petal_gates",
+			"The original Core rotation did not change at 70 and 35 percent"):
 		return
 	print("PASS: Astral and Core enemies, boss phase tells, projectiles, safe tiles, and Bloomheart node gate.")
 	quit(0)

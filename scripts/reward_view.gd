@@ -5,10 +5,6 @@ const Prep = preload("res://scripts/run_preparation_view.gd")
 const Relics = preload("res://scripts/relic_effects.gd")
 const RelicInfo = preload("res://scripts/relic_info_view.gd")
 const UpgradeArt = preload("res://scripts/upgrade_art.gd")
-const COUNTERCLOCK_ICON = RelicInfo.COUNTERCLOCK_ICON
-const THORNMAIL_ICON = RelicInfo.EvolutionArt.THORNMAIL
-const RECEIPT_ICON = RelicInfo.RECEIPT_ICON
-const RECEIPT_REGION = RelicInfo.RECEIPT_REGION
 const ICONS = preload("res://assets/art/items/room_rewards.png")
 const DEW_TEA_RECT = Rect2(209, 112, 210, 224)
 const THORN_EDGE_RECT = Rect2(445, 112, 210, 224)
@@ -105,7 +101,7 @@ static func draw(game) -> void:
 			[current.name, current.damage, new_weapon.damage, current.interval, new_weapon.interval],
 			12, Color(CREAM, header))
 	elif not consumable.is_empty():
-		draw_card(game, RELIC_RECT, game.RunItems.card(consumable), reveal, 0.23, clock)
+		draw_card(game, RELIC_RECT, game.RunItems.card(consumable, game.hero), reveal, 0.23, clock)
 	elif upgrade_ids.size() > 1:
 		draw_card(game, upgrade_rect(1, has_third), upgrade_card(game, upgrade_ids[1]), reveal, 0.23, clock)
 

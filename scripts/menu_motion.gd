@@ -14,6 +14,7 @@ var garden_reaction_hero := -1
 var garden_reaction_age := INF
 var garden_reaction_kind := 0
 var pause_panel := "relics"
+var pause_relic_page := 0
 var pause_upgrade := ""
 var reward_relic_preview := ""
 var _screen := ""

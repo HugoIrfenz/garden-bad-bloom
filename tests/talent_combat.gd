@@ -71,8 +71,9 @@ func test_quill(game) -> void:
 	actor(game, Vector2(238, 216))
 	game.talents.tick(game, 0.95, false, false)
 	game.act("dodge")
-	expect(game.talents.quiet_charge == 0.0, "Dodge did not clear Quiet Quill's charge.")
-	game.dash_remaining = 0.0
+	expect(is_equal_approx(game.talents.quiet_charge, Talents.QUIET_TIME), "Vivianne's stationary frost cast should preserve Quiet Quill's charge.")
+	game.talents.tick(game, 0.016, true, false)
+	expect(game.talents.quiet_charge == 0.0, "Moving did not clear Quiet Quill's charge.")
 	game.talents.tick(game, 0.95, false, false)
 	game.act("skill")
 	var effect: Dictionary = game.abilities.snapshot().effect

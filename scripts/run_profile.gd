@@ -2,6 +2,7 @@ extends RefCounted
 
 const Decorations = preload("res://scripts/garden_decorations.gd")
 const Media = preload("res://scripts/garden_media.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const VERSION = 1
 const HISTORY_LIMIT = 60
 const FINALIZING = "finalizing"
@@ -12,7 +13,8 @@ const ROSE_TEA_CORNER = "rose_tea_corner"
 const BASE_DECORATIONS = [FOUNTAIN_LANTERNS, PORCELAIN_PLANTERS, FIREFLY_GROVE, ROSE_TEA_CORNER]
 const STARTING_ITEMS = ["royal_teacup", "clockwise_tonic", "petal_bomb"]
 const STARTING_WEAPONS = ["morning_promise", "black_margin", "pocket_thunder", "ribbon_string", "palette_knives",
-	"clockface_shank", "royal_cleaver", "moonquill_staff", "tiny_hammerfists", "hollowglass_bow", "snarewood_bow"]
+	"clockface_shank", "royal_cleaver", "moonquill_staff", "tiny_hammerfists", "hollowglass_bow", "snarewood_bow",
+	"graveglass_pistol"]
 const BASE_SEED_OFFERS = {
 	"royal_teacup": 7,
 	"clockwise_tonic": 10,
@@ -32,6 +34,10 @@ const BASE_SEED_OFFERS = {
 	"tiny_hammerfists": 33,
 	"hollowglass_bow": 34,
 	"snarewood_bow": 36,
+	"graveglass_pistol": 42,
+	"hero_mina": GuestRoster.PRICE,
+	"hero_whi": GuestRoster.PRICE,
+	"hero_luna": GuestRoster.LUNA_PRICE,
 }
 
 static var GARDEN_DECORATIONS: Array = BASE_DECORATIONS + Decorations.PRICES.keys()
@@ -105,12 +111,83 @@ func purchase_unlock(unlock_id: String) -> Error:
 	if garden_seeds < cost:
 		return ERR_CANT_ACQUIRE_RESOURCE
 	var next := _data.duplicate(true)
-	var existing: Variant = next.get("unlocks", [])
+	add_unlock(next, unlock_id)
+	next.garden_seeds = garden_seeds - cost
+	return commit_local(next)
+
+func unlock_luna_with_petals(run_id: String) -> Error:
+	var error := load_local()
+	if error != OK:
+		return error
+	if has_unlock(GuestRoster.LUNA_UNLOCK):
+		return ERR_ALREADY_EXISTS
+	var next := _data.duplicate(true)
+	add_unlock(next, GuestRoster.LUNA_UNLOCK)
+	next.luna_petals_run = run_id
+	return commit_local(next)
+
+func has_luna_petal_purchase(run_id: String) -> bool:
+	return not run_id.is_empty() and str(_data.get("luna_petals_run", "")) == run_id
+
+static func add_unlock(data: Dictionary, unlock_id: String) -> void:
+	var existing: Variant = data.get("unlocks", [])
 	var unlocks: Array = existing if existing is Array else []
 	unlocks.append(unlock_id)
-	next.unlocks = unlocks
-	next.garden_seeds = garden_seeds - cost
-	error = write_json(_profile_path, next)
+	data.unlocks = unlocks
+
+func add_garden_seeds(amount: int) -> Error:
+	if amount <= 0:
+		return ERR_INVALID_PARAMETER
+	var error := load_local()
+	if error != OK:
+		return error
+	var next := _data.duplicate(true)
+	next.garden_seeds = garden_seeds + amount
+	return commit_local(next)
+
+func apply_online_award(award: Dictionary, codex) -> Error:
+	var award_id := str(award.get("id", ""))
+	var seeds := int(award.get("seeds", -1))
+	var foes: Variant = award.get("foes", [])
+	var weapons: Variant = award.get("weapons", [])
+	var relics: Variant = award.get("relics", [])
+	var unlocks: Variant = award.get("unlocks", [])
+	if award_id.is_empty() or award_id.length() > 128 or seeds < 0 \
+			or not foes is Array or not weapons is Array or not relics is Array or not unlocks is Array:
+		return ERR_INVALID_DATA
+	for unlock in unlocks:
+		if unlock != GuestRoster.LUNA_UNLOCK:
+			return ERR_INVALID_DATA
+	for foe in foes:
+		if not foe is Dictionary:
+			return ERR_INVALID_DATA
+	for item in weapons + relics:
+		if not item is String:
+			return ERR_INVALID_DATA
+	var error := load_local()
+	if error != OK:
+		return error
+	var awards: Dictionary = _data.get("online_awards", {})
+	if not awards.has(award_id):
+		var next := _data.duplicate(true)
+		var journal: Dictionary = next.get("online_awards", {})
+		journal[award_id] = true
+		next.online_awards = journal
+		next.garden_seeds = garden_seeds + seeds
+		for unlock: String in unlocks:
+			if unlock not in next.get("unlocks", []):
+				add_unlock(next, unlock)
+		error = commit_local(next)
+		if error != OK:
+			return error
+	codex.observe(foes)
+	for weapon: String in weapons:
+		codex.observe_weapon(weapon)
+	codex.observe_relics(relics)
+	return ERR_CANT_CREATE if codex.dirty else OK
+
+func commit_local(next: Dictionary) -> Error:
+	var error := write_json(_profile_path, next)
 	if error != OK:
 		return error
 	set_data(next)
@@ -118,7 +195,7 @@ func purchase_unlock(unlock_id: String) -> Error:
 	# committed purchase into a retryable charge.
 	var mirror_error := write_json(_backup_path, _data)
 	if mirror_error != OK:
-		push_warning("Could not mirror the Garden unlock: " + error_string(mirror_error))
+		push_warning("Could not mirror the Garden profile: " + error_string(mirror_error))
 	return OK
 
 static func stage_result(active_path: String, summary: Dictionary) -> Error:

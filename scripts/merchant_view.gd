@@ -56,6 +56,15 @@ static func draw_offer(game, area: Rect2, offer: Dictionary) -> void:
 	view.text(game, area.position + Vector2(57, 52), "%d Petals" % offer.price, 10, muted)
 
 static func draw_icon(game, id: String, point: Vector2, tint: Color) -> void:
+	if id == game.merchant.REVIVE_ITEM:
+		var color := Color("#f2cfad") * tint
+		game.draw_circle(point, 12.0, Color("#885a73") * tint)
+		game.draw_rect(Rect2(point + Vector2(-2, -8), Vector2(4, 16)), color)
+		game.draw_rect(Rect2(point + Vector2(-8, -2), Vector2(16, 4)), color)
+		return
+	if id == game.GuestRoster.LUNA_UNLOCK:
+		game.LunaArt.icon(game, 0, point, 33.0, tint)
+		return
 	if game.Weapons.DEFINITIONS.has(id):
 		game.WeaponArt.draw_icon(game, id, point, 29.0)
 		return
@@ -102,9 +111,10 @@ static func tap(game, point: Vector2) -> void:
 	elif REFRESH.has_point(point):
 		game.merchant.refresh(game)
 	else:
-		for index in range(game.merchant.STOCK_COUNT):
+		var offers: Array[Dictionary] = game.merchant.stock(game)
+		for index in range(offers.size()):
 			if stock_rect(index).has_point(point):
-				if index == game.merchant.WEAPON_SLOT:
+				if index == game.merchant.WEAPON_SLOT and game.Weapons.DEFINITIONS.has(offers[index].id):
 					game.merchant.comparing_weapon = true
 				else:
 					game.merchant.buy(game, index)

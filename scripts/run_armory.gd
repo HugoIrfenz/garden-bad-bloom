@@ -148,12 +148,14 @@ func thunder(game, hit: Dictionary, attack_id: int) -> void:
 			nearest = distance
 			other = foe
 	if not other.is_empty():
-		second_hit(game, other, 9)
+		second_hit(game, other, 4)
 		add_trace("lightning", center, game.target(other), Color("#ffda96"))
 
 func knockback(game, foe: Dictionary, distance: float, id: String) -> void:
+	if not can_move(foe):
+		return
 	var start: Vector2 = game.target(foe)
-	var far := id == "tiny_hammerfists" and can_move(foe)
+	var far := id == "tiny_hammerfists"
 	var length := 49.0 if far else distance
 	var finish := move_target(game, foe, start, (start - game.player).normalized() * length, far)
 	if not far or start.distance_squared_to(finish) < 10.0 * 10.0:
@@ -170,7 +172,7 @@ func knockback(game, foe: Dictionary, distance: float, id: String) -> void:
 			nearest_distance = offset
 			closest = other
 	if not closest.is_empty():
-		second_hit(game, closest, 8)
+		second_hit(game, closest, 4)
 
 static func can_move(foe: Dictionary) -> bool:
 	return not bool(foe.boss) and not bool(foe.get("flower_node", false)) and not bool(foe.get("web_anchor", false))

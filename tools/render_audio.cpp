@@ -910,7 +910,8 @@ void render_prologue_sfx() {
 
 void render_sfx(const std::string& name) {
     const bool bright = name == "chest" || name == "reward" || name == "clear" || name == "board_win";
-    const bool long_cue = name == "boss_enter" || name == "ultimate" || name == "fall" || name == "boss_triumph";
+    const bool long_cue = name == "boss_enter" || name == "ultimate" || name == "fall" || name == "boss_triumph"
+        || name == "luna_frenzy";
     const double seconds = name == "boss_triumph" ? 1.48 : (long_cue ? 0.99 : (bright ? 0.88 : 0.37));
     Mix mix(seconds, false);
     if (name == "ui") {
@@ -938,6 +939,40 @@ void render_sfx(const std::string& name) {
     } else if (name == "zaria") {
         mix.texture(0, .14, 1450, 2220, .42, .66, 9, -.39);
         mix.texture(.045, .14, 2080, 1310, .39, .70, 10, .31);
+    } else if (name == "mina") {
+        mix.texture(0, .24, 275, 75, .62, .25, 12, -.16);
+        mix.texture(.035, .21, 1600, 380, .31, .61, 9, .16);
+        mix.note(Pizz, 45, .039, .17, .35, 0);
+    } else if (name == "whi") {
+        mix.note(Celeste, 88, 0, .18, .45, -.13);
+        mix.note(Harp, 95, .047, .22, .34, .16);
+        mix.texture(.01, .20, 2100, 2890, .14, .66, 7, .09);
+    } else if (name == "luna_pistol") {
+        // A dry, stylized click and dark bell keep the fast-fire cue away from music.
+        mix.texture(.0, .056, 1390, 330, .58, .39, 40, -.13);
+        mix.texture(.014, .087, 797, 285, .24, .24, 43, .21);
+        mix.note(Pizz, 47, .006, .106, .28, -.03);
+    } else if (name == "luna_dodge") {
+        mix.texture(.0, .147, 1450, 534, .33, .78, 11, -.22);
+        mix.texture(.021, .13, 307, 143, .27, .58, 16, .23);
+        mix.note(Woodblock, 59, .051, .07, .18, -.04);
+    } else if (name == "luna_claw") {
+        mix.texture(.0, .124, 222, 1060, .32, .66, 14, -.32);
+        mix.texture(.029, .12, 1730, 487, .29, .73, 17, .30);
+        mix.note(Pizz, 37, .017, .118, .30, .03);
+    } else if (name == "luna_frenzy") {
+        // A short two-voice howl resolves into bronze and glass.
+        mix.texture(.024, .63, 99, 381, .55, .29, 3.6, -.13);
+        mix.texture(.125, .48, 308, 511, .37, .39, 4.2, .25);
+        mix.note(Cello, 45, .074, .51, .54, -.28);
+        mix.note(Cello, 52, .18, .4, .38, .27);
+        mix.note(Harp, 69, .26, .39, .36, -.18);
+        mix.note(Celeste, 81, .35, .41, .31, .22);
+        mix.mix_room(.27);
+    } else if (name == "luna_impact") {
+        mix.texture(.0, .145, 356, 81, .53, .45, 20, .06);
+        mix.texture(.019, .12, 1112, 418, .30, .66, 19, -.19);
+        mix.note(Timpani, 41, .015, .13, .31, .12);
     } else if (name == "dodge") {
         mix.texture(0, .216, 1290, 380, .46, .85, 7.4);
         mix.texture(.012, .177, 270, 105, .20, .52, 9.0);
@@ -1121,6 +1156,17 @@ void render_arcade_sfx() {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--luna-only") {
+        for (const char* cue : {"luna_pistol", "luna_dodge", "luna_claw", "luna_frenzy", "luna_impact"}) {
+            render_sfx(cue);
+        }
+        return 0;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--guest-only") {
+        render_sfx("mina");
+        render_sfx("whi");
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--optional-bosses") {
         for (const auto& score : optional_bosses) render_boss(score, true);
         return 0;
@@ -1132,7 +1178,7 @@ int main(int argc, char** argv) {
     const bool upgrade_only = argc == 2 && std::string(argv[1]) == "--upgrade-only";
     const bool arcade_only = argc == 2 && std::string(argv[1]) == "--arcade-only";
     if (argc > 1 && !sfx_only && !boss_only && !feedback && !prologue_only && !upgrade_only && !arcade_only) {
-        std::cerr << "Usage: render_audio [--boss-only | --sfx-only | --feedback | --prologue-only | --upgrade-only | --arcade-only]\n";
+        std::cerr << "Usage: render_audio [--boss-only | --sfx-only | --feedback | --prologue-only | --upgrade-only | --arcade-only | --guest-only]\n";
         return 1;
     }
     if (arcade_only) {
@@ -1167,7 +1213,8 @@ int main(int argc, char** argv) {
         }
     }
     if (!feedback) {
-        for (const char* sample : {"ui", "confirm", "cancel", "angela", "vivianne", "nixia", "virelia", "zaria",
+        for (const char* sample : {"ui", "confirm", "cancel", "angela", "vivianne", "nixia", "virelia", "zaria", "mina", "whi",
+                "luna_pistol", "luna_dodge", "luna_claw", "luna_frenzy", "luna_impact",
                 "dodge", "hit", "hurt", "guard", "warning", "warning_boss", "chest", "reward", "clear",
                 "boss_enter", "ultimate", "fall"}) {
             render_sfx(sample);
@@ -1183,7 +1230,7 @@ int main(int argc, char** argv) {
         render_upgrade_sfx();
         render_arcade_sfx();
     }
-    std::cout << "Rendered " << (feedback ? 15 : 51) << " original sound effects";
+    std::cout << "Rendered " << (feedback ? 15 : 58) << " original sound effects";
     if (!sfx_only) std::cout << " and " << (feedback ? 8 : 32) << " instrumental loops";
     if (!sfx_only && !feedback) std::cout << " plus five prologue score cues";
     std::cout << ".\n";

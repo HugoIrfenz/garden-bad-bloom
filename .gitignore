@@ -2,3 +2,6 @@
 /builds/
 *.apk
 *.idsig
+/online-signaling/.wrangler/
+/online-signaling/node_modules/
+/online-signaling/.dev.vars*

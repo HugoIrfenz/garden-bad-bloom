@@ -37,6 +37,7 @@ func setup(game, hero: int) -> void:
 	game.attack_time = 0.0
 	game.dodge_time = 0.0
 	game.mercy = 0.0
+	game.room_arrival = 0.0
 
 func actor(game, point: Vector2, boss := false) -> Dictionary:
 	var foe = {"x": point.x, "y": point.y, "hp": 160, "max": 160, "kind": 0,
@@ -57,8 +58,7 @@ func test_ranged_aim_and_kit(game) -> void:
 	var witch_bolt: Dictionary = game.bolts[0]
 	expect(float(witch_bolt.dy) > 0.95, "Vivianne's basic spell did not use the same visible target.")
 	game.act("dodge")
-	var witch_duration: float = game.dash_remaining
-	var witch_dash_speed: float = game.dash_vector.length()
+	expect(game.dash_remaining == 0.0 and game.dodge_time > 0.0, "Vivianne dodge button should cast frost instead of a dash.")
 
 	setup(game, 3)
 	var marked := Vector2(241.0, 249.0)
@@ -73,8 +73,8 @@ func test_ranged_aim_and_kit(game) -> void:
 	expect(float(ranger_arrow.speed) < float(witch_bolt.speed) and float(ranger_arrow.life) > float(witch_bolt.life),
 		"Ranger arrows should travel slower with enough lifetime to carry further than Vivianne's magic.")
 	game.act("dodge")
-	expect(game.dash_remaining < witch_duration and game.dash_vector.length() > witch_dash_speed,
-		"Virelia's dodge should cover ground faster than Vivianne's.")
+	expect(is_equal_approx(game.dash_remaining, game.DASH_DURATIONS[3]) and is_equal_approx(game.dash_vector.length() * game.dash_remaining, game.DASH_DISTANCES[3]),
+		"Virelia's dodge did not use her configured duration and distance.")
 
 	setup(game, 2)
 	var close_foe := actor(game, Vector2(185.0, 216.0))
@@ -82,8 +82,8 @@ func test_ranged_aim_and_kit(game) -> void:
 	game.act("attack")
 	expect(close_foe.hp < distant_foe.hp and distant_foe.hp < 160, "Nixia did not gain a close-range strike bonus.")
 	game.act("dodge")
-	expect(game.dash_remaining < witch_duration and game.dash_vector.length() * game.dash_remaining < witch_dash_speed * witch_duration,
-		"Nixia's dodge should be brief and cover less ground than Vivianne's.")
+	expect(is_equal_approx(game.dash_remaining, game.DASH_DURATIONS[2]) and is_equal_approx(game.dash_vector.length() * game.dash_remaining, game.DASH_DISTANCES[2]),
+		"Nixia's dodge did not use her configured duration and distance.")
 
 func cast(game) -> void:
 	game.resource = 5
@@ -110,10 +110,11 @@ func test_last_stand(game) -> void:
 	expect(game.hp == 113, "Last Stand did not partially mitigate incoming damage.")
 	reload(game)
 	enemy = game.foes[0]
+	var basic_damage: int = game.Weapons.item(game.Weapons.starter(0)).damage
 	game.strike(enemy)
-	expect(enemy.hp == 134, "Last Stand's empowered counter was lost after resume.")
+	expect(enemy.hp == 160 - basic_damage - 13, "Last Stand's empowered counter was lost after resume.")
 	game.strike(enemy)
-	expect(enemy.hp == 121, "Last Stand's saved counter fired more than once.")
+	expect(enemy.hp == 160 - 2 * basic_damage - 13, "Last Stand's saved counter fired more than once.")
 	game.ultimates.tick(game, 4.5)
 	game.mercy = 0.0
 	game.damage_hero(20)
@@ -140,14 +141,14 @@ func test_security_breach(game) -> void:
 	var boss = actor(game, Vector2(164.0, 260.0), true)
 	cast(game)
 	game.ultimates.tick(game, 0.65)
-	expect(launched.hp == 120 and collateral.hp == 160 and boss.hp == 120,
+	expect(launched.hp == 140 and collateral.hp == 160 and boss.hp == 140,
 		"SECURITY BREACH did not resolve its four melee impacts.")
 	game.ultimates.tick(game, 0.11)
-	expect(game.target(launched).x > 210.0 and collateral.hp == 148 and game.target(boss) == Vector2(164.0, 260.0),
+	expect(game.target(launched).x > 210.0 and collateral.hp == 154 and game.target(boss) == Vector2(164.0, 260.0),
 		"SECURITY BREACH failed to launch a small enemy into collateral while leaving the boss in place.")
 	reload(game)
 	game.ultimates.tick(game, 0.11)
-	expect(game.foes[1].hp == 148 and game.target(game.foes[0]).x > 278.0,
+	expect(game.foes[1].hp == 154 and game.target(game.foes[0]).x > 278.0,
 		"A saved SECURITY BREACH launch stopped early or struck its collateral twice.")
 
 func test_perfect_bloom(game) -> void:

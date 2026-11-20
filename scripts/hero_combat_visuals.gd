@@ -30,7 +30,7 @@ const INK = Color("#bb94ff")
 const LILY_ECHO = Color("#ebb0ff")
 
 static func action_body(canvas: Node2D, hero: int, feet: Vector2, height: float, direction: Vector2,
-		phase: float, skill: bool, tint: Color, impact := 0.0, repeat := false) -> void:
+		phase: float, skill: bool, tint: Color, impact := 0.0, repeat := false, sword_stage := 0) -> void:
 	phase = clampf(phase, 0.0, 1.0)
 	var side := -1.0 if direction.x < -0.09 else 1.0
 	var peak := sin(PI * phase)
@@ -38,6 +38,15 @@ static func action_body(canvas: Node2D, hero: int, feet: Vector2, height: float,
 	var shift := pose_shift(hero, direction, phase)
 	var lean: float = [0.17, -0.11, 0.23, -0.10, 0.20][hero]
 	var stretch := Vector2(1.0 + peak * 0.05, 1.0 - peak * 0.05)
+	if hero == 0 and not skill:
+		if sword_stage == 1:
+			shift = direction * 18.0 * impulse
+			lean = 0.27
+			stretch *= Vector2(1.06, 0.97)
+		elif sword_stage == 2:
+			shift += Vector2(0.0, -peak * 9.0)
+			lean = -0.24
+			stretch *= Vector2(0.96, 1.07)
 	if skill:
 		var stride: float = [3.0, -2.0, 8.0, 3.0, 8.0][hero]
 		shift = direction * stride * impulse
@@ -73,19 +82,32 @@ static func pose_shift(hero: int, direction: Vector2, phase: float) -> Vector2:
 	return direction * stride * thrust + direction.orthogonal() * side
 
 static func basic(canvas: Node2D, hero: int, center: Vector2, direction: Vector2, phase: float, finisher: bool,
-		repeat := false) -> void:
+		repeat := false, sword_stage := 0) -> void:
 	var tail := 1.0 - phase
 	var angle := direction.angle()
 	var side := direction.orthogonal()
 	match hero:
 		0:
-			var slash := angle + (1.65 - phase * 2.75 if repeat else -1.75 + phase * 2.75)
+			if sword_stage == 1:
+				var tip := (center + direction * (30.0 + phase * 47.0)).round()
+				var base := (tip - direction * 36.0).round()
+				canvas.draw_line(base, tip, Color(FROST, tail * 0.75), 6.0)
+				canvas.draw_line(base, tip, Color("#eefaff", tail), 2.0)
+				spark(canvas, tip, 7.0 * tail, Color(GOLD, tail))
+				for flank: float in [-1.0, 1.0]:
+					var start := (base + side * flank * 9.0).round()
+					canvas.draw_line(start, (start + direction * 19.0).round(), Color(FROST, tail), 1.0)
+				return
+			var slash := angle + (1.65 - phase * 2.75 if repeat or sword_stage == 2 else -1.75 + phase * 2.75)
 			var reach := 37.0 + phase * 17.0
 			var blade := LILY_ECHO if repeat else FROST
 			canvas.draw_arc(center, reach, slash - 0.94, slash + 0.35, 31, Color(blade, tail * 0.80), 9.0, true)
 			canvas.draw_arc(center, reach + 3.0, slash - 0.82, slash + 0.34, 31, Color.WHITE * Color(1, 1, 1, tail), 2.4, true)
 			spark(canvas, center + Vector2.from_angle(slash + 0.3) * (reach + 3.0), 4.0 + 4.0 * tail, Color(blade, tail))
 			if finisher:
+				var rise := center + direction * (24.0 + phase * 29.0) - Vector2(0.0, phase * 36.0)
+				canvas.draw_line((rise + Vector2(0, 22)).round(), rise.round(), Color("#e6f4ff", tail), 3.0)
+				spark(canvas, rise.round(), 7.0, Color(GOLD, tail))
 				canvas.draw_arc(center, reach + 13.0, slash - 1.17, slash + 0.5, 32, Color(GOLD, tail), 4.0, true)
 				for i in range(3):
 					var arc_angle := slash - 0.65 + i * 0.5
@@ -141,6 +163,29 @@ static func projectile(canvas: Node2D, hero: int, center: Vector2, direction: Ve
 			center + side * 4.0, center - direction * 4.0, center - side * 4.0]), Color("#fff0b8"))
 		canvas.draw_line(center - direction * 21.0, center - direction * 12.0 + side * 4.0, RIBBON, 2.0, true)
 		canvas.draw_line(center - direction * 21.0, center - direction * 12.0 - side * 4.0, RIBBON, 2.0, true)
+
+static func charged_arrow(canvas: Node2D, tip: Vector2, direction: Vector2, charge: float) -> void:
+	var size := lerpf(1.0, 2.0, charge)
+	var side := direction.orthogonal()
+	var shaft := (tip - direction * 25.0 * size).round()
+	tip = tip.round()
+	canvas.draw_line(shaft, tip, Color("#f9ac9d", 0.61), ceilf(3.0 * size))
+	canvas.draw_line(shaft, tip, Color("#fff0ba"), ceilf(1.4 * size))
+	canvas.draw_colored_polygon(PackedVector2Array([tip, (tip - direction * 12.0 * size + side * 4.0 * size).round(),
+		(tip - direction * 8.0 * size).round(), (tip - direction * 12.0 * size - side * 4.0 * size).round()]), Color("#fffae6"))
+	spark(canvas, shaft, 4.0 * size, Color(RIBBON, 0.72))
+
+static func draw_bow_charge(canvas: Node2D, center: Vector2, direction: Vector2, charge: float) -> void:
+	var point := (center + direction * (26.0 + 15.0 * charge)).round()
+	var side := direction.orthogonal()
+	var rise := 17.0 + 4.0 * charge
+	var bow := PackedVector2Array([(point - side * rise).round(), point + direction * 7.0, (point + side * rise).round()])
+	canvas.draw_polyline(bow, Color("#f6c09b"), 2.0)
+	var draw_point := (point - direction * (8.0 + 16.0 * charge)).round()
+	canvas.draw_polyline(PackedVector2Array([bow[0], draw_point, bow[2]]), Color("#fff0ce"), 1.0)
+	if charge > 0.05:
+		canvas.draw_line(draw_point, point, Color(GOLD), ceilf(1.0 + charge))
+		spark(canvas, point, 4.0 + charge * 8.0, Color("#ffdaa0", 0.5 + charge * 0.5))
 
 static func step_sweep(canvas: Node2D, center: Vector2, direction: Vector2, tint: Color, alpha: float) -> void:
 	var side := direction.orthogonal()

@@ -155,7 +155,7 @@ static func draw_footer(game, id: String, color: Color) -> void:
 			"draw":
 				line = prefs.text("arcade.refund", {"amount": stake})
 			_:
-				line = prefs.text("arcade.win_prize", {"prize": Catalog.label(id, "prize", prefs.language)})
+				line = prefs.text("arcade.win_prize", {"prize": Catalog.prize(game, id)})
 	var label := "common.back" if practice else ("three_caps.claim" if ended else "three_caps.forfeit")
 	view.button(game, EXIT, prefs.text(label), ended and not practice)
 	var info := Rect2(74, 330, 458 if not practice or not ended else 376, 41)
@@ -171,7 +171,7 @@ static func winning_prize(game, id: String) -> String:
 	if id == Catalog.CATCH:
 		return game.preferences.text("item.clockwise_tonic.name") if game.pocket.held.is_empty() \
 			else game.preferences.text("arcade.petals", {"amount": 9})
-	return Catalog.label(id, "prize", game.preferences.language)
+	return Catalog.prize(game, id)
 
 
 static func result_key(mode: String) -> String:
@@ -185,7 +185,7 @@ static func tap_round(game, point: Vector2) -> void:
 	if game.arcade.round == null:
 		return
 	var id: String = game.arcade.id
-	if id != Catalog.BOARD and EXIT.has_point(point):
+	if id != Catalog.BOARD and game.arcade.outcome != "playing" and EXIT.has_point(point):
 		game.arcade.settle(game)
 	elif id != Catalog.BOARD and game.arcade.practice and game.arcade.outcome != "playing" and REPLAY.has_point(point):
 		game.practice_arcade_round(id)

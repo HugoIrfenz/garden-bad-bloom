@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "garden-bad-bloom-signaling",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "GARDENS", "class_name": "GardenRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GardenRoom"] }]
+}

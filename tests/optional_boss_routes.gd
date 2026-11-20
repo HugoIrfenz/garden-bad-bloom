@@ -86,6 +86,8 @@ func exercise(game, biome: int, boss_id: String) -> bool:
 	game.resume_run()
 	if game.foes.size() != 1 or game.foes[0].phase != 1 or not is_equal_approx(game.foes[0].clock, clock):
 		return false
+	if boss_id == game.OptionalBosses.QUEEN and not exercise_edge_hop(game):
+		return false
 	if not exercise_attack_cycle(game, boss_id) or not exercise_phase_transition(game, boss_id):
 		return false
 	game.enter_room()
@@ -340,6 +342,9 @@ func exercise(game, biome: int, boss_id: String) -> bool:
 	game.resume_run()
 	if game.screen != "reward" or game.reward_relic_id != reward:
 		return false
+	var icon: Dictionary = game.View.Reward.RelicInfo.icon(reward)
+	if icon.is_empty() or not Rect2(Vector2.ZERO, icon.texture.get_size()).encloses(icon.icon):
+		return false
 	game.tap(game.View.Reward.RELIC_RECT.get_center())
 	game.tap(game.View.Reward.RELIC_EQUIP.get_center())
 	game.resume_run()
@@ -350,6 +355,26 @@ func exercise(game, biome: int, boss_id: String) -> bool:
 		return false
 	game.take_exit(detour.rejoin)
 	return game.room_id == detour.rejoin and game.floor_index == biome
+
+# Boss mobility is exercised separately so it cannot delay the attack-cycle
+# timing checks below.  A ranged boss trapped at an edge must relocate.
+func exercise_edge_hop(game) -> bool:
+	var boss: Dictionary = game.foes[0]
+	var original := boss.duplicate(true)
+	var old_player: Vector2 = game.player
+	var edge: Vector2 = game.ARENA.position + Vector2(20.0, game.ARENA.size.y * 0.5)
+	boss.merge({"x": edge.x, "y": edge.y, "phase": 3, "clock": 0.0, "footwork_cd": 0.0, "hop_left": 0.0, "slide_left": 0.0}, true)
+	game.player = game.ARENA.get_center()
+	game.update_foes(0.0)
+	var started := float(boss.get("hop_left", 0.0)) > 0.0
+	game.update_foes(game.BossMobility.HOP_TIME)
+	var moved: bool = game.target(boss).distance_to(edge) > 76.0
+	boss.clear()
+	boss.merge(original, true)
+	game.player = old_player
+	if not started or not moved:
+		push_error("Ranged boss failed to hop away from the arena edge")
+	return started and moved
 
 # Attack effects are ordered by their authored cycle. Use normal update dispatch.
 func exercise_attack_cycle(game, boss_id: String) -> bool:
@@ -373,7 +398,7 @@ func exercise_attack_cycle(game, boss_id: String) -> bool:
 	var patterns: Array = moves[boss_id]
 	game.barrels.clear()
 	for attack in range(patterns.size()):
-		boss.merge({"x": origin.x, "y": origin.y, "clock": 0.0, "phase": 3}, true)
+		boss.merge({"x": origin.x, "y": origin.y, "clock": 0.0, "phase": 3, "footwork_cd": 999.0, "hop_left": 0.0, "slide_left": 0.0}, true)
 		boss.erase("hour_echoes")
 		game.bolts.clear()
 		game.hp = 100
@@ -402,7 +427,7 @@ func exercise_phase_transition(game, boss_id: String) -> bool:
 	}
 	var boss: Dictionary = game.foes[0]
 	var threshold_hp := floori(float(boss.max) * float(thresholds.get(boss_id, 0.5)))
-	boss.merge({"hp": threshold_hp + 1, "phase": 3, "clock": 0.0}, true)
+	boss.merge({"hp": threshold_hp + 1, "phase": 3, "clock": 0.0, "footwork_cd": 999.0, "hop_left": 0.0, "slide_left": 0.0}, true)
 	game.update_foes(0.0)
 	if boss.get("optional_second", false) or boss.phase != 1:
 		push_error("%s changed phase above its threshold" % boss_id)

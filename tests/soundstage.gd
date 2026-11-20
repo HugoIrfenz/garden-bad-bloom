@@ -2,7 +2,7 @@ extends SceneTree
 
 const Soundstage = preload("res://scripts/garden_soundstage.gd")
 const MUSIC = ["title", "garden", "roster", "preparation", "settings", "archive", "shop", "rest", "event", "curse", "reward", "victory", "defeat"]
-const EFFECTS = ["ui", "confirm", "cancel", "angela", "vivianne", "nixia", "virelia", "zaria",
+const EFFECTS = ["ui", "confirm", "cancel", "angela", "vivianne", "nixia", "virelia", "zaria", "mina", "whi",
 	"dodge", "hit", "hurt", "guard", "warning", "warning_boss", "chest", "reward", "clear", "boss_enter", "ultimate", "fall"]
 
 func _initialize() -> void:
@@ -24,6 +24,15 @@ func run() -> void:
 	for cue in music:
 		var stream = game.sound.stream_for("music", cue, "ogg")
 		if not require(stream is AudioStreamOggVorbis and stream.get_length() > 12.0, "Missing loop " + cue):
+			return
+	for cue: String in game.OptionalBosses.NAMES:
+		var tape := "vhs_" + cue
+		var shelf: int = game.SeedShop.Shelf.MEDIA
+		var page: int = game.SeedShop.page_of(shelf, tape)
+		var stream = game.sound.stream_for("music", game.GardenMedia.cue(tape), "ogg")
+		if not require(tape in game.GardenMedia.TAPES and tape in game.SeedShop.page_offers(shelf, page)
+				and game.RunProfile.SEED_OFFERS.has(tape) and stream is AudioStreamOggVorbis and stream.get_length() > 0.0,
+				"Missing hidden boss VHS, shop entry, or score for " + cue):
 			return
 	for effect in EFFECTS:
 		var stream = game.sound.stream_for("sfx", effect, "wav")
@@ -95,5 +104,5 @@ func run() -> void:
 			return
 	game.sound.shutdown()
 	await create_timer(0.12).timeout
-	print("PASS: all 47 audio assets imported, audible event mapping, menu fades, combat/boss music, and one-shot routing.")
+	print("PASS: campaign audio and hidden boss VHS assets imported, audible event mapping, menu fades, combat/boss music, and one-shot routing.")
 	quit(0)

@@ -151,14 +151,16 @@ static func draw_details(game, id: String) -> void:
 		1:
 			view.text(game, Vector2(353, 195), "Effect", 16, INK, true)
 			var baseline := draw_paragraph(game, item.detail, 353.0, 215.0, 434.0) + 11.0
-			view.text(game, Vector2(353, baseline), "Trigger and limit", 16, INK, true)
-			draw_paragraph(game, Icons.TRIGGER_NOTES[id], 353.0, baseline + 20.0, 434.0)
+			var trigger: String = Icons.TRIGGER_NOTES.get(id, "")
+			if not trigger.is_empty():
+				view.text(game, Vector2(353, baseline), "Trigger and limit", 16, INK, true)
+				draw_paragraph(game, trigger, 353.0, baseline + 20.0, 434.0)
 		_:
 			var baseline := 214.0
 			view.text(game, Vector2(353, 195), "Combinations", 16, INK, true)
 			var combinations := Sources.combinations(id)
 			if combinations.is_empty():
-				combinations.append("The perfect-dodge charge works with any basic weapon attack.")
+				combinations.append("No recorded combinations.")
 			for line: String in combinations:
 				baseline = draw_paragraph(game, line, 353.0, baseline, 434.0) + 10.0
 

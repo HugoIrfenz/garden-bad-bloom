@@ -27,6 +27,9 @@ class EncounterRoom:
 	var room_id = ""
 	var floor_manifest: Dictionary = {}
 
+	func open_arcade_round(_game_id: String) -> void:
+		screen = "minigame"
+
 	func healing_amount(amount: int, source := "standard") -> int:
 		return clampi(amount, 0, HEALTH[hero] - hp) if curses.healing_block(source).is_empty() else 0
 
@@ -167,6 +170,16 @@ func test_seeded_routes(biome: int, legacy_fixture: String) -> void:
 		if not peek.encounter.is_empty():
 			verify_encounter(game, biome, route, peek.encounter)
 			continue
+		if not peek.minigame.is_empty():
+			game.tap(game.RouteView.FIRST_ACTION.get_center())
+			expect(game.screen == "minigame" and game.arcade.id == peek.minigame and game.petals == peek.petals,
+				"The event did not start its promised minigame or charge its stake.")
+			game.arcade.round.state = "loss"
+			game.arcade.sync_outcome(game)
+			game.arcade.settle(game)
+			game.resume_run()
+			expect(game.room_complete and not Events.apply(game, 0), "A finished minigame event did not persist.")
+			continue
 		game.tap(game.RouteView.FIRST_ACTION.get_center())
 		expect(game.room_complete and game.hp == peek.hp and game.petals == peek.petals
 			and game.resource == peek.resource and game.bonus == peek.bonus,
@@ -199,8 +212,7 @@ func verify_encounter(game, biome: int, route: Dictionary, kind: String) -> void
 	expect(game.screen == "fight" and game.room_kind == kind and not game.room_complete
 		and game.foes.size() == stage.get("foes", []).size() and not game.foes.is_empty()
 		and game.route_history == visits and not Events.apply(game, 0), "The %s did not resume at the combat stage." % kind)
-	var base_reward := 8 + mini(int(game.depth), 60)
-	var expected_petals := initial_petals + base_reward + (12 if kind == "challenge" else 7)
+	var expected_petals: int = initial_petals + game.RunEconomy.room_petals(kind, game.floor_index, true)
 	finish_encounter(game, game.HUNT_TIME - 1.0)
 	expect(game.pending_chest and game.petals == expected_petals,
 		"Clearing the %s did not award the advertised chest and bonus Petals." % kind)
@@ -211,7 +223,7 @@ func verify_encounter(game, biome: int, route: Dictionary, kind: String) -> void
 		game.RunProfile.write_json(game.SAVE, stage)
 		game.resume_run()
 		finish_encounter(game, game.HUNT_TIME + 1.0)
-		expect(game.pending_chest and game.petals == initial_petals + base_reward,
+		expect(game.pending_chest and game.petals == initial_petals + game.RunEconomy.room_petals(kind, game.floor_index, false),
 			"Clearing after the hunt deadline did not preserve the ordinary chest reward.")
 	if walk_to_event(game, biome, route):
 		var alternate := Events.preview(game, 1)

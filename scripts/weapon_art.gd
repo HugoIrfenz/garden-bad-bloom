@@ -1,6 +1,9 @@
 extends RefCounted
 
 const Catalog = preload("res://scripts/weapon_catalog.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const GuestArt = preload("res://scripts/guest_hero_art.gd")
+const LunaArt = preload("res://scripts/luna_art.gd")
 const Prep = preload("res://scripts/run_preparation_view.gd")
 const EvolutionArt = preload("res://scripts/evolution_art.gd")
 const FIELD = preload("res://assets/art/items/field_weapons.png")
@@ -14,6 +17,13 @@ const REGIONS = [
 static func draw_icon(canvas: Node2D, id: String, center: Vector2, size: float) -> void:
 	var definition := Catalog.item(id)
 	if definition.is_empty():
+		return
+	if int(definition.hero) == GuestRoster.LUNA:
+		var tint := Color("#d4b1f3") if id == "graveglass_pistol" else Color.WHITE
+		LunaArt.icon(canvas, 15, center, size, tint)
+		return
+	if GuestRoster.is_guest(int(definition.hero)):
+		GuestArt.icon(canvas, definition.hero, 14, center, size)
 		return
 	if not EvolutionArt.icon(id).is_empty():
 		EvolutionArt.draw_icon(canvas, id, center, size)
@@ -31,7 +41,11 @@ static func reward_card(id: String) -> Dictionary:
 		return data
 	data.kind = "Weapon"
 	data.action = "Equip weapon"
-	if not EvolutionArt.icon(id).is_empty():
+	if int(data.hero) == GuestRoster.LUNA:
+		data.merge(LunaArt.source(15), true)
+	elif GuestRoster.is_guest(int(data.hero)):
+		data.merge(GuestArt.source(data.hero, 14), true)
+	elif not EvolutionArt.icon(id).is_empty():
 		data.merge(EvolutionArt.icon(id), true)
 	elif data.has("icon_index"):
 		data.texture = FIELD

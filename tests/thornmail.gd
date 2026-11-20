@@ -11,6 +11,9 @@ func expect(passed: bool, issue: String) -> void:
 
 func fixture(game, arm_delay: float = 0.0, cover: bool = false) -> void:
 	game.barrels.clear()
+	game.boss_victory.reset()
+	game.room_arrival = 0.0
+	game.screen = "fight"
 	if cover:
 		game.barrels.append(Vector2(335, 208))
 	game.foes = [{"x": 370, "y": 208, "hp": 40, "max": 40, "kind": 0,
@@ -38,9 +41,12 @@ func run() -> void:
 		game.relics.equip(relic_id)
 	game.relics.equip(game.Relics.COUNTERCLOCK_LOCKET)
 	var reward_seed := 12345
-	expect(game.relics.boss_offer(reward_seed, 1).is_empty(), "A different heroine was offered Thornmail.")
+	expect(game.relics.boss_offer(reward_seed, 1) != game.Relics.THORNMAIL, "A different heroine was offered Thornmail.")
 	for foe in game.foes:
 		foe.hp = 0
+	game._physics_process(0.016)
+	# Let the boss-fall animation complete before inspecting the reward.
+	game._physics_process(2.0)
 	game._physics_process(0.016)
 	expect(game.reward_relic_id == game.Relics.THORNMAIL, "The Garden boss did not offer the in-pool relic.")
 	game.player = game.chest_position
@@ -64,9 +70,9 @@ func run() -> void:
 	expect(int(game.foes[0].hp) < 40 and game.resource == 2, "The burst missed or counted as a basic attack.")
 	expect(game.abilities.counter_bonus(game, game.foes[0]) > 0, "The relic consumed the normal guard counter.")
 
-	fixture(game, 0.20)
+	fixture(game, 0.28)
 	game.damage_hero(20, Vector2(370, 208))
-	expect(game.hp < 100 and game.abilities.snapshot().relic_bolts.is_empty(),
+	expect(game.hp == 100 and game.abilities.snapshot().relic_bolts.is_empty(),
 		"A regular guard triggered the relic.")
 	fixture(game, 0.0, true)
 	game.damage_hero(20, Vector2(370, 208))

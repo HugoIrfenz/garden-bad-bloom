@@ -10,6 +10,20 @@ const CORE_CUE = Color("#ffd5ba")
 const MAX_ORBIT_RADIUS = 162.0
 const FRACTURE_GRID = Vector2i(7, 3)
 const FINALE := ["petal_gates", "echo", "gravity", "petal_gates", "sequence"]
+const CAPSTONE_HEALTH_SCALE := 1.22
+const CAPSTONE_THRESHOLDS := [0.70, 0.45, 0.24, 0.10]
+const CAPSTONE_ROTATIONS := [
+	["sequence", "echo", "gravity"],
+	["gravity", "echo", "sequence"],
+	["petal_gates", "echo", "gravity", "sequence"],
+	["thorn_wheel", "petal_gates", "sequence", "gravity"],
+	["bloom_rite", "thorn_wheel", "petal_gates", "bloom_rite", "echo"],
+]
+const CAPSTONE_TINTS := [Color("#e6a9d2"), Color("#d2adf1"), Color("#ffc381"), Color("#fb8ab0"), Color("#fff0ac")]
+const WHEEL_TURN := 2.4
+const WHEEL_HALF_WIDTH := 15.0
+const RITE_PULSES := [0.55, 1.49, 2.43]
+const RITE_RADIUS := 43.0
 const GATE_MOVE_TIME := 1.45
 const GATE_SECOND_START := 1.94
 const GATE_ACTIVE_TIME := GATE_SECOND_START + GATE_MOVE_TIME
@@ -33,6 +47,8 @@ const MOVES = {
 	"echo": [350.0, 0.97, 1.08, 1.10],
 	"gravity": [640.0, 1.08, 1.17, 1.38],
 	"petal_gates": [900.0, 1.33, 1.16, GATE_ACTIVE_TIME],
+	"thorn_wheel": [900.0, 1.12, 0.91, 1.88],
+	"bloom_rite": [900.0, 1.28, 1.09, 2.72],
 }
 
 static func advance(game, foe: Dictionary, delta: float) -> void:
@@ -66,6 +82,32 @@ static func advance(game, foe: Dictionary, delta: float) -> void:
 static func core_boss(foe: Dictionary) -> bool:
 	return int(foe.get("biome", -1)) == CORE and foe.boss
 
+static func configure_capstone(foe: Dictionary) -> void:
+	if not core_boss(foe) or foe.has("optional_boss") or foe.has("bloomheart_phase") or int(foe.hp) <= 0:
+		return
+	foe.max = roundi(float(foe.max) * CAPSTONE_HEALTH_SCALE)
+	foe.hp = clampi(roundi(float(foe.hp) * CAPSTONE_HEALTH_SCALE), 1, int(foe.max))
+	# Preserve the current attack and health fraction in a pre-update checkpoint.
+	var phase := 0
+	for threshold: float in CAPSTONE_THRESHOLDS:
+		if int(foe.hp) <= floori(float(foe.max) * threshold):
+			phase += 1
+	foe.bloomheart_phase = phase
+	foe.bloomheart_cycle = 0
+
+static func capstone_floor(foe: Dictionary) -> int:
+	var phase := int(foe.get("bloomheart_phase", CAPSTONE_THRESHOLDS.size()))
+	return floori(float(foe.max) * CAPSTONE_THRESHOLDS[phase]) if phase < CAPSTONE_THRESHOLDS.size() else 0
+
+static func capstone_damage(foe: Dictionary, amount: int) -> int:
+	if not foe.has("bloomheart_phase"):
+		return amount
+	var floor_hp := capstone_floor(foe)
+	if floor_hp == 0 and (int(foe.bloomheart_cycle) == 0 or
+			(int(foe.bloomheart_cycle) == 1 and int(foe.phase) in [Geometry.WINDUP, Geometry.LUNGE])):
+		floor_hp = 1
+	return mini(amount, maxi(0, int(foe.hp) - floor_hp))
+
 static func spawn_flower_nodes(game, foe: Dictionary) -> void:
 	if foe.get("nodes_spawned", false):
 		return
@@ -73,6 +115,7 @@ static func spawn_flower_nodes(game, foe: Dictionary) -> void:
 	var arena: Rect2 = game.ARENA
 	var bounds = arena.grow(-58.0)
 	var positions = [Vector2(0.12, 0.29), Vector2(0.28, 0.74), Vector2(0.52, 0.24), Vector2(0.71, 0.74), Vector2(0.88, 0.29)]
+	var ward_health := 44 if foe.has("bloomheart_phase") else 26
 	for index in range(positions.size()):
 		var mark: Vector2 = bounds.position + bounds.size * positions[index]
 		for offset in [Vector2.ZERO, Vector2(0, 44), Vector2(0, -44), Vector2(32, 0), Vector2(-32, 0)]:
@@ -82,7 +125,7 @@ static func spawn_flower_nodes(game, foe: Dictionary) -> void:
 				break
 		game.foes.append({"biome": CORE, "kind": 4, "boss": false, "flower_node": true, "flower_index": index,
 			"x": mark.x, "y": mark.y, "tx": mark.x, "ty": mark.y,
-			"hp": 26, "max": 26, "phase": Geometry.APPROACH, "clock": 1000.0})
+			"hp": ward_health, "max": ward_health, "phase": Geometry.APPROACH, "clock": 1000.0})
 
 static func shield_lives(game) -> int:
 	var count = 0
@@ -94,11 +137,13 @@ static func shield_lives(game) -> int:
 static func defend(game, foe: Dictionary, amount: int) -> int:
 	if core_boss(foe) and (not foe.get("nodes_spawned", false) or shield_lives(game) > 0):
 		return 0
-	return amount
+	return capstone_damage(foe, amount)
 
 static func stage(foe: Dictionary) -> int:
 	if not foe.boss:
 		return 0
+	if foe.has("bloomheart_phase"):
+		return int(foe.bloomheart_phase)
 	var ratio = float(foe.hp) / maxf(1.0, float(foe.max))
 	if int(foe.biome) == ASTRAL:
 		return 1 if ratio <= 0.5 else 0
@@ -115,12 +160,22 @@ static func choose(foe: Dictionary) -> String:
 		return ["mote", "spokes", "reflection"][kind] if kind < 3 else sequence[cycle % sequence.size()]
 	if kind < 3:
 		return ["wish_dash", "glitch", "fracture"][kind]
+	if foe.has("bloomheart_phase"):
+		var rotation: Array = CAPSTONE_ROTATIONS[wave]
+		return rotation[int(foe.bloomheart_cycle) % rotation.size()]
 	if wave == 2:
 		return FINALE[int(foe.get("finale_step", 0)) % FINALE.size()]
 	var sequence := ["sequence", "echo", "gravity"] if wave == 0 else ["echo", "sequence", "gravity"]
 	return sequence[cycle % sequence.size()]
 
 static func approach(game, foe: Dictionary, delta: float) -> void:
+	if foe.has("bloomheart_phase") and int(foe.bloomheart_cycle) > 0 \
+			and int(foe.bloomheart_phase) < CAPSTONE_THRESHOLDS.size() and int(foe.hp) <= capstone_floor(foe):
+		foe.bloomheart_phase = int(foe.bloomheart_phase) + 1
+		foe.bloomheart_cycle = 0
+		foe.clock = 0.0
+		game.sound.play("boss_star", 0.84 + 0.09 * int(foe.bloomheart_phase))
+		game.checkpoint.call_deferred()
 	var origin: Vector2 = game.target(foe)
 	var gap: Vector2 = game.player - origin
 	var move = choose(foe)
@@ -156,7 +211,9 @@ static func arm(game, foe: Dictionary, move: String) -> void:
 	foe.merge({"move": move, "phase": Geometry.WINDUP, "clock": duration, "duration": duration,
 		"ox": origin.x, "oy": origin.y, "dx": direction.x, "dy": direction.y,
 		"tx": game.player.x, "ty": game.player.y, "attack_stage": wave, "hits": 0}, true)
-	if core_boss(foe) and wave == 2:
+	if foe.has("bloomheart_phase"):
+		foe.bloomheart_cycle = int(foe.bloomheart_cycle) + 1
+	elif core_boss(foe) and wave == 2:
 		foe.finale_step = int(foe.get("finale_step", 0)) + 1
 	if move in ["reflection", "wish_dash"]:
 		var aim = direction
@@ -184,6 +241,12 @@ static func arm(game, foe: Dictionary, move: String) -> void:
 		# Give the player time to reach the first opening by starting across the room.
 		foe.gate_from_left = float(game.player.x) > center.x
 		foe.gate_second_cue = false
+		# Store the gap so an in-flight attack from an older save keeps its warning.
+		foe.gate_half_opening = 42.0 if foe.has("bloomheart_phase") else GATE_HALF_OPENING
+	elif move == "thorn_wheel":
+		foe.wheel_turn = WHEEL_TURN if int(foe.bloomheart_cycle) % 2 == 1 else -WHEEL_TURN
+	elif move == "bloom_rite":
+		foe.rite_sites = rite_sites(game)
 
 static func begin_attack(foe: Dictionary) -> void:
 	foe.phase = Geometry.LUNGE
@@ -195,7 +258,7 @@ static func begin_attack(foe: Dictionary) -> void:
 
 static func active(game, foe: Dictionary, delta: float) -> void:
 	var progress = Geometry.progress(foe)
-	var origin = Geometry.origin(foe)
+	var origin: Vector2 = Geometry.origin(foe)
 	match str(foe.move):
 		"mote":
 			move_mote(game, foe, delta)
@@ -243,13 +306,67 @@ static func active(game, foe: Dictionary, delta: float) -> void:
 		"gravity":
 			var focus = Geometry.aim(foe)
 			var gap: Vector2 = focus - game.player
-			if gap.length() < 110.0 and game.dash_remaining <= 0.0:
+			if gap.length() < 110.0 and game.dash_remaining <= 0.0 and not game.parry_hero_attack(focus):
 				game.player = game.slide_with_cover(game.player, gap.normalized() * delta * (35.0 + 10 * int(foe.attack_stage)))
 			var radius = gravity_radius(progress)
 			if absf(gap.length() - radius) <= 14.0:
 				once(game, foe, 0, 19)
 		"petal_gates":
 			sweep_gate(game, foe, delta)
+		"thorn_wheel":
+			for line_end: Vector2 in wheel_ends(game, foe, progress):
+				if Geometry.segment_gap(game.player, origin, line_end) <= WHEEL_HALF_WIDTH:
+					once(game, foe, 0, 22, origin)
+					break
+		"bloom_rite":
+			pulse_rite(game, foe, delta)
+
+static func wheel_ends(game, foe: Dictionary, progress: float) -> Array[Vector2]:
+	var origin := Geometry.origin(foe)
+	var base := Geometry.direction(foe).angle() + progress * float(foe.wheel_turn)
+	var ends: Array[Vector2] = []
+	for index in range(3):
+		var ray_direction := Vector2.from_angle(base + index * TAU / 3.0)
+		ends.append(Geometry.line_endpoint(game, origin, ray_direction, 914.0))
+	return ends
+
+static func rite_sites(game) -> Array:
+	var arena: Rect2 = game.ARENA
+	var bounds := arena.grow(-34.0)
+	var previous_site: Vector2 = game.player
+	var sites: Array = []
+	for pulse in RITE_PULSES.size():
+		var forward := previous_site.direction_to(arena.get_center())
+		if forward.is_zero_approx():
+			forward = Vector2.UP
+		var turn := 1.0 if pulse % 2 == 0 else -1.0
+		var best := previous_site
+		for angle: float in [turn * 0.78, 0.0, -turn * 0.78, turn * 1.56, -turn * 1.56, PI]:
+			var aim := (previous_site + forward.rotated(angle) * 96.0).clamp(bounds.position, bounds.end)
+			var heading := previous_site.direction_to(aim)
+			var point := Geometry.clear_endpoint(game, previous_site, heading, previous_site.distance_to(aim), game.BARREL_CLEARANCE)
+			if point.distance_squared_to(previous_site) > best.distance_squared_to(previous_site):
+				best = point
+			if best.distance_squared_to(previous_site) >= 92.0 * 92.0:
+				break
+		sites.append([best.x, best.y])
+		previous_site = best
+	return sites
+
+static func rite_site(foe: Dictionary, index: int) -> Vector2:
+	var site: Array = foe.rite_sites[index]
+	return Vector2(site[0], site[1])
+
+static func pulse_rite(game, foe: Dictionary, delta: float) -> void:
+	var elapsed := float(foe.duration) - float(foe.clock)
+	var previous := elapsed - delta
+	for index in RITE_PULSES.size():
+		var pulse: float = RITE_PULSES[index]
+		if previous < pulse and pulse <= elapsed:
+			var site := rite_site(foe, index)
+			game.sound.play("enemy_arcane", 0.83 + 0.15 * index)
+			if game.player.distance_squared_to(site) > RITE_RADIUS * RITE_RADIUS:
+				once(game, foe, index, 26, site)
 
 static func gate_from_left(foe: Dictionary, wave: int) -> bool:
 	return bool(foe.gate_from_left) == (wave == 0)
@@ -274,7 +391,7 @@ static func sweep_gate(game, foe: Dictionary, delta: float) -> void:
 		foe.gate_second_cue = true
 		game.sound.play("enemy_gear", 0.87)
 	var wave := gate_wave(elapsed)
-	if wave < 0 or absf(float(game.player.y) - float(foe.gate_openings[wave])) <= GATE_HALF_OPENING:
+	if wave < 0 or absf(float(game.player.y) - float(foe.gate_openings[wave])) <= float(foe.get("gate_half_opening", GATE_HALF_OPENING)):
 		return
 	var arena: Rect2 = game.ARENA
 	var current_x := gate_x(arena, foe, wave, gate_progress(elapsed, wave))
@@ -302,7 +419,8 @@ static func once(game, foe: Dictionary, index: int, damage: int, source: Vector2
 	var bit = 1 << index
 	if int(foe.hits) & bit == 0:
 		foe.hits = int(foe.hits) | bit
-		game.damage_hero(damage, source)
+		var pressure := int(foe.attack_stage) if foe.has("bloomheart_phase") else 0
+		game.damage_hero(damage + pressure, source)
 
 static func spoke_ends(game, foe: Dictionary, ratio: float) -> Array[Vector2]:
 	var result: Array[Vector2] = []
@@ -313,8 +431,8 @@ static func spoke_ends(game, foe: Dictionary, ratio: float) -> Array[Vector2]:
 	return result
 
 static func paths(game, foe: Dictionary) -> Array:
-	var origin = Geometry.origin(foe)
-	var direction = Geometry.direction(foe)
+	var origin: Vector2 = Geometry.origin(foe)
+	var direction: Vector2 = Geometry.direction(foe)
 	var mirrored = bool(int(foe.attack_stage) % 2)
 	var offsets = [0.0, 85.0] if foe.move == "constellation" else [-65.0, 0.0, 65.0]
 	if int(foe.attack_stage) > 0 and foe.move == "constellation":
@@ -336,7 +454,7 @@ static func impact_points(game, foe: Dictionary) -> Array[Vector2]:
 	var offsets = [0.0, 66.0, -66.0]
 	if foe.move == "sequence" or int(foe.attack_stage) > 0:
 		offsets.append_array([129.0, -129.0])
-	if foe.move == "sequence" and int(foe.attack_stage) == 2:
+	if foe.move == "sequence" and int(foe.attack_stage) >= 2:
 		offsets.reverse()
 	for offset in offsets:
 		var point: Vector2 = game.clamp_position(aim + side * offset)
@@ -388,8 +506,8 @@ static func warning(game, foe: Dictionary) -> void:
 	if not foe.has("move"):
 		return
 	var canvas: Node2D = game.world_canvas
-	var origin = Geometry.origin(foe)
-	var direction = Geometry.direction(foe)
+	var origin: Vector2 = Geometry.origin(foe)
+	var direction: Vector2 = Geometry.direction(foe)
 	var ratio = Geometry.progress(foe)
 	match str(foe.move):
 		"mote":
@@ -439,17 +557,41 @@ static func warning(game, foe: Dictionary) -> void:
 			spark(canvas, focus, 7.0 + ratio * 6.0, CORE_CUE)
 		"petal_gates":
 			draw_gate_opening(game, foe, 0, 0.7 + ratio * 0.3, true)
+		"thorn_wheel":
+			for line_end: Vector2 in wheel_ends(game, foe, 0.0):
+				Geometry.paint_lane(canvas, origin, line_end, WHEEL_HALF_WIDTH, ratio)
+			var first := direction.angle()
+			var turn := signf(float(foe.wheel_turn))
+			var orbit := first + 0.95 * turn
+			canvas.draw_arc(origin, 53.0, minf(first, orbit), maxf(first, orbit), 20, GATE_BLADE, 2.4, true)
+			var tip := origin + Vector2.from_angle(orbit) * 53.0
+			var tangent := Vector2.from_angle(orbit).orthogonal() * turn
+			canvas.draw_polyline(PackedVector2Array([tip - tangent * 10.0 + tangent.orthogonal() * 5.0,
+				tip, tip - tangent * 10.0 - tangent.orthogonal() * 5.0]), GATE_BLADE, 2.4, true)
+		"bloom_rite":
+			draw_rite_site(canvas, rite_site(foe, 0), ratio, 0.0)
 
 static func attack_effect(game, foe: Dictionary) -> void:
 	var canvas: Node2D = game.world_canvas
-	if core_boss(foe) and (not foe.get("nodes_spawned", false) or shield_lives(game) > 0):
+	var shielded: bool = core_boss(foe) and (not foe.get("nodes_spawned", false) or shield_lives(game) > 0)
+	var changing_phase := foe.has("bloomheart_phase") and capstone_damage(foe, 1) == 0
+	if shielded or changing_phase:
 		var position: Vector2 = game.target(foe)
+		var edge := Color("#ffe29b") if changing_phase else Color("#ffc4ab")
 		canvas.draw_arc(position, 41.0, game.visual_clock * 1.8, game.visual_clock * 1.8 + 5.3,
-			45, Color(1.0, 0.77, 0.67, 0.8), 2.1, true)
+			45, Color(edge, 0.8), 2.1, true)
+	if foe.has("bloomheart_phase") and int(foe.bloomheart_phase) > 0:
+		var center: Vector2 = game.target(foe)
+		var phase := int(foe.bloomheart_phase)
+		var hue: Color = CAPSTONE_TINTS[phase]
+		for index in range(phase):
+			var angle := float(game.visual_clock) * 1.2 + TAU * index / phase
+			var petal := (center + Vector2.from_angle(angle) * Vector2(48.0, 21.0)).round()
+			spark(canvas, petal, 5.0, Color(hue, 0.72))
 	if foe.phase != Geometry.LUNGE or not foe.has("move"):
 		return
 	var ratio = Geometry.progress(foe)
-	var origin = Geometry.origin(foe)
+	var origin: Vector2 = Geometry.origin(foe)
 	match str(foe.move):
 		"mote":
 			var point = Vector2(foe.orb[0], foe.orb[1])
@@ -513,14 +655,54 @@ static func attack_effect(game, foe: Dictionary) -> void:
 				var arena: Rect2 = game.ARENA
 				var travel := gate_progress(elapsed, wave)
 				draw_gate_wall(canvas, arena, gate_x(arena, foe, wave, travel),
-					float(foe.gate_openings[wave]), elapsed)
+					float(foe.gate_openings[wave]), float(foe.get("gate_half_opening", GATE_HALF_OPENING)), elapsed)
+		"thorn_wheel":
+			for line_end: Vector2 in wheel_ends(game, foe, ratio):
+				canvas.draw_line(origin, line_end, Color(GATE_BLADE, 0.46), WHEEL_HALF_WIDTH * 2.0, true)
+				ray(canvas, origin, line_end, CORE_CUE)
+				var direction := origin.direction_to(line_end)
+				for index in range(1, int(origin.distance_to(line_end) / 35.0) + 1):
+					var thorn := (origin + direction * (index * 35.0 - fposmod(ratio * 84.0, 28.0))).round()
+					spark(canvas, thorn, 5.0, Color(GATE_BLADE, 0.87))
+		"bloom_rite":
+			draw_rite(game, foe)
+
+static func draw_rite(game, foe: Dictionary) -> void:
+	var canvas: Node2D = game.world_canvas
+	var elapsed := float(foe.duration) - float(foe.clock)
+	var start := 0.0
+	for index in RITE_PULSES.size():
+		var pulse: float = RITE_PULSES[index]
+		var site := rite_site(foe, index)
+		if elapsed < pulse + 0.18:
+			var flare := 1.0 - clampf((elapsed - pulse) / 0.18, 0.0, 1.0) if elapsed >= pulse else 0.0
+			canvas.draw_rect(game.ARENA, Color(GATE_BLADE, 0.08 + flare * 0.18))
+			if index + 1 < RITE_PULSES.size():
+				var next := rite_site(foe, index + 1)
+				canvas.draw_dashed_line(site, next, Color(GATE_SAFE, 0.53), 1.4, 8.0, true, true)
+				canvas.draw_arc(next, RITE_RADIUS, 0.0, TAU, 32, Color(GATE_SAFE, 0.41), 1.2, true)
+			draw_rite_site(canvas, site, clampf(inverse_lerp(start, pulse, elapsed), 0.0, 1.0), flare)
+			return
+		start = pulse
+
+static func draw_rite_site(canvas: Node2D, site: Vector2, charge: float, flare: float) -> void:
+	canvas.draw_circle(site, RITE_RADIUS, Color("#253241", 0.87), true, -1.0, true)
+	canvas.draw_arc(site, RITE_RADIUS, 0.0, TAU, 44, GATE_SAFE, 2.2, true)
+	if charge > 0.01:
+		canvas.draw_arc(site, RITE_RADIUS - 5.0, -PI * 0.5, -PI * 0.5 + TAU * charge,
+			44, Color("#e9ffe5", 0.91), 2.0, true)
+	for index in range(6):
+		var petal := (site + Vector2.from_angle(index * TAU / 6.0) * (18.0 + 8.0 * charge)).round()
+		spark(canvas, petal, 4.2 + flare * 2.0, GATE_SAFE)
+	spark(canvas, site.round(), 8.0 + 4.0 * charge, Color("#fff5c7"))
 
 static func draw_gate_opening(game, foe: Dictionary, wave: int, intensity: float, preview: bool) -> void:
 	var canvas: Node2D = game.world_canvas
 	var arena: Rect2 = game.ARENA
 	var opening: float = foe.gate_openings[wave]
-	var top := opening - GATE_HALF_OPENING
-	var bottom := opening + GATE_HALF_OPENING
+	var half := float(foe.get("gate_half_opening", GATE_HALF_OPENING))
+	var top := opening - half
+	var bottom := opening + half
 	canvas.draw_rect(Rect2(arena.position.x, top, arena.size.x, bottom - top), Color(GATE_SAFE, intensity * 0.12))
 	for edge in [top, bottom]:
 		canvas.draw_dashed_line(Vector2(arena.position.x + 8.0, edge), Vector2(arena.end.x - 8.0, edge),
@@ -539,13 +721,13 @@ static func draw_gate_opening(game, foe: Dictionary, wave: int, intensity: float
 	canvas.draw_line(Vector2(wave_x, arena.position.y), Vector2(wave_x, top), Color(GATE_BLADE, intensity), 4.0, true)
 	canvas.draw_line(Vector2(wave_x, bottom), Vector2(wave_x, arena.end.y), Color(GATE_BLADE, intensity), 4.0, true)
 
-static func draw_gate_wall(canvas: Node2D, arena: Rect2, x: float, opening: float, elapsed: float) -> void:
+static func draw_gate_wall(canvas: Node2D, arena: Rect2, x: float, opening: float, half: float, elapsed: float) -> void:
 	var left := maxf(arena.position.x, x - GATE_HALF_WIDTH)
 	var right := minf(arena.end.x, x + GATE_HALF_WIDTH)
 	if right <= left:
 		return
-	var top := opening - GATE_HALF_OPENING
-	var bottom := opening + GATE_HALF_OPENING
+	var top := opening - half
+	var bottom := opening + half
 	for segment in [Vector2(arena.position.y, top), Vector2(bottom, arena.end.y)]:
 		var band := Rect2(left, segment.x, right - left, segment.y - segment.x)
 		canvas.draw_rect(band, Color("#cb426e", 0.51))

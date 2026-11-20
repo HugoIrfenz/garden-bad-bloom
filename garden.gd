@@ -25,6 +25,7 @@ const Preferences = preload("res://scripts/garden_preferences.gd")
 const MenuMotion = preload("res://scripts/menu_motion.gd")
 const RunProfile = preload("res://scripts/run_profile.gd")
 const Dungeon = preload("res://scripts/dungeon_generation.gd")
+const EncounterFactory = preload("res://scripts/encounter_factory.gd")
 const EndlessRules = preload("res://scripts/endless_mutators.gd")
 const GardenSoundstage = preload("res://scripts/garden_soundstage.gd")
 const Codex = preload("res://scripts/codex.gd")
@@ -35,6 +36,11 @@ const RouteView = preload("res://scripts/dungeon_route_view.gd")
 const RoomEvents = preload("res://scripts/room_events.gd")
 const RunCurses = preload("res://scripts/run_curses.gd")
 const OptionalBosses = preload("res://scripts/optional_bosses.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const GuestCombat = preload("res://scripts/guest_combat.gd")
+const LunaCombat = preload("res://scripts/luna_combat.gd")
+const LunaArt = preload("res://scripts/luna_art.gd")
+const GuestArt = preload("res://scripts/guest_hero_art.gd")
 const RunEconomy = preload("res://scripts/run_economy.gd")
 const CapBoard = preload("res://scripts/cap_board.gd")
 const ArcadeCatalog = preload("res://scripts/arcade_catalog.gd")
@@ -97,10 +103,10 @@ const ROOM_VARIANT_CELLS = {
 	"final_tea_table": [3, 1, 1],
 }
 
-const NAMES = ["Angela", "Vivianne", "Nixia", "Virelia", "Zaria"]
-const RESOURCES = ["Resolve", "Ink", "Momentum", "Focus", "Spark"]
-const COLORS = [Color.SKY_BLUE, Color.LAVENDER, Color.MEDIUM_PURPLE, Color.LIGHT_PINK, Color.TURQUOISE]
-const HEALTH = [125, 80, 100, 95, 90]
+const NAMES = GuestRoster.NAMES
+const RESOURCES = ["Resolve", "Ink", "Momentum", "Focus", "Spark", "Fury", "Grace", "Frenzy"]
+const COLORS = GuestRoster.COLORS
+const HEALTH = [125, 80, 70, 95, 65, 145, 35, 72]
 const BIOMES = ["Forgotten Garden", "Mushroom Kingdom", "Clockwork Conservatory", "Bloodbloom Forest", "Hollow Palace", "Astral Greenhouse", "Bloomheart Core", "Garden Without End"]
 const SAVE = "user://run.json"
 const ARENA = Rect2(31, 78, 802, 286)
@@ -116,6 +122,10 @@ const POCKET = Vector2(651, 335)
 const JOYSTICK = Vector2(84, 323)
 const JOYSTICK_TRAVEL = 58.0
 const JOYSTICK_DEADZONE = 8.0
+const ROSTER_NO_POINTER := -2
+const ROSTER_MOUSE := -1
+const ROSTER_TAP_SLOP := 12.0
+const ABILITY_INSPECT_DELAY := 0.24
 const ELITE_CHANCE = 0.12
 const ELITE_HEAL_CHANCE = 0.30
 const ELITE_HEAL_AMOUNT = 8
@@ -123,9 +133,9 @@ const ELITE_WINDUP_FACTOR = 0.80
 const ACTIVE_RUN_SCREENS = ["fight", "reward", "clear", "room_choice", "talent", "forge", "minigame"]
 const SWING_DURATION = 0.24
 const LILY_REPEAT_DELAY = 0.13
-const DASH_DISTANCES = [82.0, 64.0, 54.0, 93.0, 110.0]
-const DASH_DURATIONS = [0.18, 0.25, 0.11, 0.14, 0.14]
-const DASH_RECHARGE = [1.0, 1.28, 0.83, 0.96, 0.77]
+const DASH_DISTANCES = [82.0, 0.0, 54.0, 93.0, 110.0]
+const DASH_DURATIONS = [0.18, 0.0, 0.11, 0.14, 0.14]
+const DASH_RECHARGE = [1.0, 0.0, 0.83, 0.96, 0.50]
 const BASIC_INTERVALS = Weapons.STARTER_INTERVAL
 const BASIC_POWER = Weapons.STARTER_DAMAGE
 const CURRENT_LAYOUT = 2
@@ -157,6 +167,9 @@ var dodge_time = 0.0
 var mercy = 0.0
 var skill_time = 0.0
 var abilities = HeroAbilities.new()
+var guest_combat := GuestCombat.new()
+var luna_combat := LunaCombat.new()
+var luna_petals_debited := false
 var ultimates = HeroUltimates.new()
 var combat_status = CombatStatuses.new()
 var talents := RunTalents.new()
@@ -201,6 +214,21 @@ var aim_mouse := false
 var run_paused: bool = false
 var confirm_end_run: bool = false
 var garden_seeds = 0
+var seed_hold_pointer := -2
+var seed_hold_start := 0.0
+var seed_hold_counted := false
+var seed_grant_left := 0.0
+var roster_first := 0
+var roster_pointer := ROSTER_NO_POINTER
+var roster_press := Vector2.ZERO
+var roster_press_first := 0
+var roster_dragged := false
+var ability_hold_pointer := ROSTER_NO_POINTER
+var ability_hold_id := -1
+var ability_hold_hero := -1
+var ability_hold_started := 0.0
+var ability_hold_panel := ""
+var ability_hold_bounds := Rect2()
 var run_time = 0.0
 var last_outcome = ""
 var visual_clock = 0.0
@@ -216,6 +244,14 @@ var room_title = ""
 var room_template = ""
 var ground_hazards = GardenGroundHazards.new()
 var clockwork_floor = ClockworkFloor.new()
+const CHARGE_TIME := 0.92
+const NO_ATTACK_POINTER := -4
+const KEY_ATTACK_POINTER := -3
+const MOUSE_ATTACK_POINTER := -2
+var attack_pointer := NO_ATTACK_POINTER
+var attack_held_for := 0.0
+var bow_release := -1.0
+var angela_attack_stage := 0
 var lily_combo = 0
 var lily_combo_time = 0.0
 var lily_finisher_flash = false
@@ -227,6 +263,8 @@ var room_exits: Dictionary = {}
 var room_complete = false
 var room_clock = 0.0
 const ROOM_ARRIVAL = 0.62
+const BOSS_ARRIVAL := 1.42
+const BossMobility = preload("res://scripts/boss_mobility.gd")
 var room_arrival = 0.0
 var pocket := RunItems.new()
 var merchant := GardenMerchant.new()
@@ -260,10 +298,34 @@ var relic_ledger_carried: Array[String] = []
 var relic_ledger_page := 0
 var relic_ledger_entry := 0
 var relic_ledger_tab := 0
+var network_simulation := false
+var online_peer: Node
+var online_frame: Dictionary = {}
+var online_members: Dictionary = {}
+var online_heroes: Dictionary = {}
+var online_positions: Dictionary = {}
+var online_effects: Dictionary = {}
+var online_names: Dictionary = {}
+var online_transfer_notice := ""
+var online_spectating := false
+var online_current_room := ""
+var online_party_clear := false
+var online_leaving := false
+var online_finished_award_saved := false
+var online_leave_started := 0.0
+var online_final_leaderboard: Dictionary = {}
 
 func _ready() -> void:
 	combat_status.bind(self)
 	ground_hazards.bind_combat_status(combat_status)
+	if network_simulation:
+		# Headless authority actors share the world but never open the solo save,
+		# process local input, play duplicate music, or create extra viewports.
+		set_process(false)
+		set_physics_process(false)
+		set_process_input(false)
+		set_process_unhandled_input(false)
+		return
 	preferences.load_local()
 	codex.load_local()
 	setup_world_canvas()
@@ -281,6 +343,276 @@ func _ready() -> void:
 		if record is Dictionary and record.get("relics") is Array:
 			past_relics.append_array(record.relics)
 	codex.observe_relics(past_relics)
+
+func _exit_tree() -> void:
+	if network_simulation:
+		# These audio nodes are deliberately not attached for authority actors.
+		if is_instance_valid(sound) and not sound.is_inside_tree():
+			sound.free()
+		if is_instance_valid(jukebox) and not jukebox.is_inside_tree():
+			if is_instance_valid(jukebox.player) and not jukebox.player.is_inside_tree():
+				jukebox.player.free()
+			jukebox.free()
+
+func open_multiplayer() -> void:
+	if has_node("OnlineLobby"):
+		return
+	var lobby := preload("res://scripts/online/lobby_screen.gd").new()
+	lobby.name = "OnlineLobby"
+	lobby.game = self
+	add_child(lobby)
+
+# Keep the lobby/network node alive underneath the battle while the room runs.
+func begin_online(peer: Node) -> void:
+	if is_instance_valid(online_peer):
+		return
+	online_peer = peer
+	online_frame.clear()
+	online_members.clear()
+	online_heroes.clear()
+	online_positions.clear()
+	online_effects.clear()
+	online_names.clear()
+	online_transfer_notice = ""
+	online_spectating = false
+	online_current_room = ""
+	online_leaving = false
+	online_finished_award_saved = false
+	online_leave_started = 0.0
+	online_final_leaderboard.clear()
+	reset_run_input()
+	screen = "online_wait"
+	peer.session.set_luna_ownership(profile.has_unlock(GuestRoster.LUNA_UNLOCK))
+	peer.session.frame_received.connect(apply_online_frame)
+	peer.session.host_recovery_failed.connect(_online_recovery_failed)
+	peer.reconnecting.connect(_online_reconnecting)
+	peer.room_changed.connect(_online_room_changed)
+	_online_room_changed(peer.room)
+
+func _online_room_changed(room_data: Dictionary) -> void:
+	for row: Dictionary in room_data.get("players", []):
+		online_names[str(row.id)] = str(row.username)
+	if str(room_data.get("host", "")).is_empty():
+		online_transfer_notice = "Finding a new host…"
+
+func _online_reconnecting(seconds_left: float) -> void:
+	online_transfer_notice = "Reconnecting… %ds" % ceili(seconds_left)
+
+func _online_recovery_failed() -> void:
+	online_transfer_notice = "Unable to restore the shared run."
+
+func apply_online_frame(frame: Dictionary) -> void:
+	if not is_instance_valid(online_peer):
+		return
+	var campaign: Variant = frame.get("campaign", {})
+	var hero_states: Variant = frame.get("heroes", {})
+	if not campaign is Dictionary or not hero_states is Dictionary:
+		return
+	var party: Variant = campaign.get("party", {})
+	if not party is Dictionary or not party.get("players") is Dictionary:
+		return
+	var members: Dictionary = party.players
+	var id := str(online_peer.player_id)
+	if not members.has(id):
+		return
+	var me: Dictionary = members[id]
+	var all_awards: Variant = campaign.get("awards", {})
+	if all_awards is Dictionary and all_awards.get(id, {}) is Dictionary:
+		var pending: Dictionary = all_awards.get(id, {})
+		for award: Variant in pending.values():
+			if award is Dictionary and profile.apply_online_award(award, codex) == OK:
+				online_peer.session.set_luna_ownership(profile.has_unlock(GuestRoster.LUNA_UNLOCK))
+				garden_seeds = profile.garden_seeds
+				var award_id := str(award.get("id", ""))
+				online_peer.session.acknowledge_award(award_id)
+				if award_id.ends_with(":run-finished"):
+					online_finished_award_saved = true
+					if online_leaving:
+						_show_online_departure_summary.call_deferred()
+	var saved: Dictionary = hero_states.get(id, {})
+	var next_room := str(campaign.get("room_id", ""))
+	var next_floor := int(campaign.get("floor_index", 0))
+	var manifest: Variant = campaign.get("manifest", {})
+	var generated: Variant = campaign.get("room", {})
+	if not manifest is Dictionary or not generated is Dictionary or not manifest.get("nodes") is Dictionary 			or not manifest.nodes.has(next_room) or not generated.has("version"):
+		return
+	# Event cards and optional-route details can change after room entry; the
+	# local interface must display the choices the host actually resolves.
+	floor_manifest = manifest.duplicate(true)
+	var room_key := str(next_floor) + ":" + next_room + ":" + str(campaign.get("room_serial", 0))
+	var is_new_room := online_current_room != room_key
+	if is_new_room:
+		floor_index = next_floor
+		room_id = next_room
+		depth = int(campaign.get("depth", 0))
+		route = int(campaign.get("route", 0))
+		run_seed = int(campaign.get("seed", 0))
+		hero = clampi(int(me.get("hero", 0)), 0, NAMES.size() - 1)
+		set_room_props(generated)
+		room_generation = int(generated.version)
+		online_current_room = room_key
+		barrels.assign(generated.get("cover", []))
+		room_arrival = 0.0
+		boss_victory.reset()
+		screen = "fight"
+		reset_run_input()
+		world_canvas.queue_redraw()
+	if not is_new_room:
+		play_online_feedback(members, hero_states)
+	online_frame = frame
+	online_members = members
+	online_heroes = hero_states
+	online_party_clear = bool(party.get("room_cleared", false))
+	room_clock = maxf(0.0, float(campaign.get("room_elapsed", 0.0)))
+	room_complete = bool(me.get("room_done", false)) or online_party_clear
+	foes = campaign.get("foes", []).duplicate(true)
+	player = me.get("position", player)
+	hp = int(me.get("hp", hp))
+	online_spectating = not bool(me.get("alive", true))
+	if not saved.is_empty():
+		var saved_screen := str(saved.get("screen", "fight"))
+		if saved_screen in ["fight", "room_choice", "reward", "talent", "forge", "minigame", "clear"]:
+			screen = saved_screen
+		pending_chest = bool(saved.get("pending_chest", false))
+		chest_open_time = float(saved.get("chest_open_time", 0.0))
+		room_arrival = maxf(0.0, float(saved.get("room_arrival", 0.0)))
+		reward_relic_id = str(saved.get("reward_relic_id", ""))
+		reward_weapon_id = str(saved.get("reward_weapon_id", ""))
+		menu_motion.reward_relic_preview = str(saved.get("reward_relic_preview", ""))
+		pocket.restore(str(saved.get("pocket_item", "")), float(saved.get("pocket_haste", 0.0)))
+		merchant.restore(saved.get("merchant", {}))
+		curses.restore(saved.get("curses", {}))
+		talents.restore(hero, saved.get("talents", {}))
+		if screen == "minigame":
+			arcade.restore(saved.get("arcade", {}), saved.get("cap_board", {}), cap_board)
+		resource = int(saved.get("resource", resource))
+		petals = int(saved.get("petals", petals))
+		bonus = int(saved.get("bonus", bonus))
+		attack_time = float(saved.get("attack_time", attack_time))
+		dodge_time = float(saved.get("dodge_time", dodge_time))
+		skill_time = float(saved.get("skill_time", skill_time))
+		run_time = float(saved.get("run_time", run_time))
+		var direction: Variant = saved.get("facing", [])
+		if direction is Array and direction.size() == 2:
+			facing = Vector2(float(direction[0]), float(direction[1]))
+		abilities.restore(saved.get("abilities", {}))
+		ultimates.restore(saved.get("ultimates", {}))
+		guest_combat.restore(saved.get("guest_combat", {}))
+		luna_combat.restore(saved.get("luna_combat", {}))
+		boss_victory.restore(saved.get("boss_victory", {}))
+		snare_thread.restore(saved.get("snare_thread", {}))
+		combat_status.restore(saved.get("combat_status", {}))
+		painted_evolution.restore(saved.get("painted_evolution", {}))
+		endless.restore(saved.get("endless_state", {}))
+		ground_hazards.restore(saved.get("ground_hazards", []), float(saved.get("ground_snare", 0.0)))
+		clockwork_floor.restore(saved.get("clockwork_floor", {}), barrels)
+		elite_heal_drops.clear()
+		var drops: Variant = saved.get("elite_heal_drops", [])
+		if drops is Array:
+			for drop: Variant in drops:
+				if drop is Dictionary and drop.has_all(["x", "y"]):
+					elite_heal_drops.append({"x": float(drop.x), "y": float(drop.y)})
+		var pose: Dictionary = saved.get("presentation", {})
+		flash = float(pose.get("flash", 0.0))
+		damage_flash = float(pose.get("damage_flash", 0.0))
+		visual_velocity = pose.get("visual_velocity", Vector2.ZERO)
+		walk_distance = float(pose.get("walk_distance", walk_distance))
+		attack_visual_facing = pose.get("attack_facing", facing)
+		guest_combat.action_until = float(pose.get("guest_action_left", 0.0))
+		guest_combat.action_variant = int(pose.get("guest_action_variant", 0))
+		guest_combat.traces.assign(pose.get("hero_traces", []))
+		luna_combat.action_left = float(pose.get("luna_action_left", 0.0))
+		luna_combat.traces.assign(pose.get("luna_traces", []))
+		var dash: Variant = saved.get("dash", [])
+		if dash is Array and dash.size() == 3:
+			dash_vector = Vector2(float(dash[0]), float(dash[1]))
+			dash_remaining = float(dash[2])
+		armory.restore(hero, saved.get("armory", {}))
+		upgrades.restore(saved.get("run_upgrades", {}), hero)
+		if not relics.restore(saved.get("relics", {})):
+			relics.reset()
+	var terminal := str(campaign.get("terminal", ""))
+	if terminal in ["clear", "defeat"]:
+		last_result = {"result": terminal, "depth": depth, "elapsed_seconds": run_time,
+			"petals": petals, "relics": relics.owned.duplicate(), "seeds_earned": 1 + depth}
+		screen = "summary"
+	bolts.clear()
+	for member_id: String in hero_states:
+		var actor_state: Dictionary = hero_states[member_id]
+		for bolt: Variant in actor_state.get("bolts", []):
+			if bolt is Dictionary and (not bolt.has("damage") or member_id == id):
+				bolts.append(bolt.duplicate(true))
+	for member_id: String in members:
+		if member_id == id:
+			continue
+		var entry: Dictionary = members[member_id]
+		var pos: Variant = entry.get("position", Vector2.ZERO)
+		if not pos is Vector2:
+			continue
+		var last: Dictionary = online_positions.get(member_id, {})
+		var previous: Vector2 = last.get("to", pos)
+		online_positions[member_id] = {"from": previous, "to": pos, "time": visual_clock,
+			"moving": previous.distance_squared_to(pos) > 1.0}
+	var missing := 0.0
+	for member: Dictionary in members.values():
+		if bool(member.get("alive", false)) and not bool(member.get("connected", true)) and not bool(member.get("departed", false)):
+			missing = maxf(missing, float(member.get("rejoin_left", 0.0)))
+	var countdown := float(party.get("resume_left", 0.0))
+	if missing > 0.0:
+		online_transfer_notice = "Waiting for a friend… %ds" % ceili(missing)
+	elif countdown > 0.0:
+		online_transfer_notice = "Resuming in %d" % ceili(countdown)
+	else:
+		online_transfer_notice = ""
+
+func leave_online_run() -> void:
+	if not is_instance_valid(online_peer) or online_leaving:
+		return
+	if online_finished_award_saved:
+		_complete_online_leave()
+		return
+	online_leaving = true
+	online_leave_started = Time.get_ticks_msec() / 1000.0
+	online_transfer_notice = "Saving your rewards…"
+	online_peer.session.prepare_leave()
+
+# A voluntary departure must release the party immediately, while keeping a
+# frozen scoreboard visible on this phone until the player closes the result.
+func _show_online_departure_summary() -> void:
+	if not is_instance_valid(online_peer) or not online_leaving:
+		return
+	var local_id := str(online_peer.player_id)
+	online_final_leaderboard = {"players": online_members.duplicate(true),
+		"names": online_names.duplicate(true), "self": local_id}
+	last_result = {"result": "ended", "depth": depth, "elapsed_seconds": run_time,
+		"petals": petals, "relics": relics.owned.duplicate(),
+		"seeds_earned": 1 + depth if online_finished_award_saved else 0}
+	var lobby := get_node_or_null("OnlineLobby")
+	online_peer = null
+	online_leaving = false
+	online_transfer_notice = ""
+	reset_run_input()
+	screen = "summary"
+	if lobby != null:
+		lobby._close()
+
+func _complete_online_leave() -> void:
+	if not is_instance_valid(online_peer):
+		return
+	var lobby := get_node_or_null("OnlineLobby")
+	online_peer = null
+	online_frame.clear()
+	online_members.clear()
+	online_heroes.clear()
+	online_positions.clear()
+	online_effects.clear()
+	online_names.clear()
+	online_current_room = ""
+	online_leaving = false
+	reset_run_input()
+	screen = "garden"
+	if lobby != null:
+		lobby._close()
 
 func apply_audio_preferences() -> void:
 	sound.music_enabled = preferences.music_enabled
@@ -309,6 +641,9 @@ func setup_world_canvas() -> void:
 	add_child(world_image)
 
 func start_run(legacy := false) -> void:
+	if not GuestRoster.is_unlocked(profile, hero):
+		open_seed_shop(SeedShop.Shelf.HEROINES, GuestRoster.KEYS[hero - GuestRoster.MINA])
+		return
 	if not pending_result.is_empty() and not flush_finalization():
 		return
 	reset_run_input()
@@ -316,6 +651,11 @@ func start_run(legacy := false) -> void:
 	armory.reset(hero, weapon)
 	selected_weapon = ""
 	run_id = RunProfile.fresh_run_id()
+	menu_motion.pause_relic_page = 0
+	guest_combat.reset(true)
+	luna_combat.reset(true)
+	luna_petals_debited = false
+	ultimates.reset()
 	relics.reset()
 	twin_moon_hits = 0
 	feather_crown_left = 0.0
@@ -355,6 +695,7 @@ func load_floor() -> void:
 	route = 0
 
 func enter_room() -> void:
+	cancel_bow_charge()
 	twin_moon_sequences.clear()
 	second_chance_used = false
 	princes_pin_used = false
@@ -382,7 +723,9 @@ func enter_room() -> void:
 	lily_repeat_visual = false
 	flash = 0.0
 	abilities.reset()
-	ultimates.reset()
+	ultimates.reset(true)
+	guest_combat.reset()
+	luna_combat.reset()
 	player = room.entry
 	room_complete = floor_index >= 0 and room_kind == "transition"
 	room_clock = 0.0
@@ -399,50 +742,12 @@ func enter_room() -> void:
 	relic_foe_serial = 0
 	visual_velocity = Vector2.ZERO
 	var side_boss := optional_arena_boss()
-	var approach := optional_approach()
 	var boss = room_kind == "boss" or not side_boss.is_empty()
-	var encounter_depth = depth if floor_index < 0 else floor_index * 4 + int(floor_manifest.nodes[room_id].layer / 2)
-	var count = 1 if boss else mini(2 + encounter_depth / 3 + route, room.spawns.size())
-	if not approach.is_empty():
-		count = mini(count, 2)
-	count = endless.encounter_count(count, room_kind)
-	var rng = Dungeon.seeded(room.encounter_seed)
-	var elite_rng = Dungeon.seeded(int(room.encounter_seed) ^ 0x5e17e)
-	for index in range(count):
-		var pos: Vector2 = room.spawns[index]
-		if not side_boss.is_empty():
-			pos = Vector2(clampf(pos.x, 300.0, 564.0), maxf(169.0, pos.y))
-		var elite: bool = not boss and (room_kind == "elite" or (room_kind in ["combat", "challenge"] and elite_rng.randf() < ELITE_CHANCE))
-		# The first encounter introduces the two melee enemies.
-		var kind = 3 if boss else (index if encounter_depth == 0 else rng.randi_range(0, 2))
-		if floor_index >= 0 and not boss and index == 0 and room_template in ["hedge_maze", "flowerbed_siege"]:
-			kind = ForgottenEncounters.HEDGE_KNIGHT
-		elif floor_index >= 0 and not boss and index == 0 and room_template in ["fungal_crossroad", "glowpool"]:
-			kind = BiomeEncounters.MYCELIUM_LEAPER
-		elif floor_index >= 0 and not boss and index == 0 and room_template in ["widow_crossing", "poppy_cathedral"]:
-			kind = ForestPalace.THORN_WIDOW
-		elif floor_index >= 0 and not boss and index == 0 and active_biome == ForestPalace.PALACE and room_template in ["broken_ballroom", "chandelier_hall"]:
-			kind = ForestPalace.PORCELAIN_HOUND
-		var life := boss_health(encounter_depth) if boss else enemy_health(encounter_depth, active_biome, kind, elite)
-		var foe = {"x": pos.x, "y": pos.y, "hp": life, "max": life,
-			"boss": boss, "clock": 0.8 + index * 0.28, "phase": 0, "tx": 0.0, "ty": 0.0,
-			"kind": kind, "biome": active_biome, "enemy_power": enemy_power(encounter_depth, boss, elite),
-			"elite": elite, "elite_heal_drop": elite and elite_rng.randf() < ELITE_HEAL_CHANCE}
-		if boss:
-			foe.boss_health_multiplier = BOSS_HEALTH_MULTIPLIER
-		if not side_boss.is_empty():
-			foe.optional_boss = side_boss
-		elif index == 0 and not approach.is_empty():
-			foe.optional_boss = floor_manifest.nodes[room_id].optional_boss
-			foe.optional_lesson = approach[1]
-			foe.elite = false
-			foe.elite_heal_drop = false
-		if active_biome == ForestPalace.PALACE and kind == ForestPalace.PORCELAIN_HOUND:
-			foe.hound_side = 1 if int(room.encounter_seed) % 2 == 0 else -1
-		endless.mark_foe(foe, index, room_kind)
-		foes.append(foe)
-	room_arrival = ROOM_ARRIVAL if not foes.is_empty() else 0.0
-	resource = mini(HeroUltimates.CHARGE, resource + upgrades.enter_room(not foes.is_empty()))
+	foes.assign(EncounterFactory.spawn(room, floor_manifest, room_id, floor_index, depth, route, endless))
+	room_arrival = BOSS_ARRIVAL if entrance_boss() else (ROOM_ARRIVAL if not foes.is_empty() else 0.0)
+	var room_charge := upgrades.enter_room(not foes.is_empty())
+	if hero != GuestRoster.LUNA:
+		resource = mini(HeroUltimates.CHARGE, resource + room_charge)
 	curses.enter_hostile_room(self)
 	codex.observe(foes)
 	if boss:
@@ -514,17 +819,28 @@ func restore_early_room() -> void:
 		if route == 1:
 			barrels.append(Vector2(264, 231))
 
-func checkpoint() -> void:
+func checkpoint() -> bool:
+	if network_simulation or is_instance_valid(online_peer):
+		return true
 	if not pending_result.is_empty():
-		flush_finalization()
-		return
+		return flush_finalization()
 	if screen not in ACTIVE_RUN_SCREENS:
-		return
+		return false
 	if run_id.is_empty():
 		run_id = RunProfile.legacy_run_id(run_seed, hero)
-	var snapshot = {"layout": CURRENT_LAYOUT, "room_generation": room_generation, "screen": screen, "hero": hero,
+	var snapshot := build_run_snapshot()
+	if RunProfile.write_json(SAVE, snapshot) != OK:
+		return false
+	codex.observe_weapon(armory.for_hero(hero))
+	codex.observe_relics(relics.owned)
+	return true
+
+# Reuse the same full run state for durable saves and online host migration.
+func build_run_snapshot() -> Dictionary:
+	return {"layout": CURRENT_LAYOUT, "room_generation": room_generation, "screen": screen, "hero": hero,
 		"run_id": run_id, "seed": run_seed, "depth": depth, "hp": hp,
 		"resource": resource, "petals": petals, "bonus": bonus, "route": route, "x": player.x, "y": player.y, "foes": foes, "bolts": bolts,
+		"luna_petals_debited": luna_petals_debited,
 		"elite_heal_drops": elite_heal_drops,
 		"feather_crown_left": feather_crown_left,
 		"honest_eyes_ready": honest_eyes_ready,
@@ -555,10 +871,24 @@ func checkpoint() -> void:
 		"lily_repeat": lily_repeat.duplicate(),
 		"relics": relics.snapshot(), "relic_foe_serial": relic_foe_serial, "dash_evaded": dash_evaded,
 		"facing": [facing.x, facing.y], "dash": [dash_vector.x, dash_vector.y, dash_remaining],
-		"skill_time": skill_time, "abilities": abilities.snapshot(), "ultimates": ultimates.snapshot(), "run_time": run_time}
-	if RunProfile.write_json(SAVE, snapshot) == OK:
-		codex.observe_weapon(armory.for_hero(hero))
-		codex.observe_relics(relics.owned)
+		"skill_time": skill_time, "guest_combat": guest_combat.snapshot(), "luna_combat": luna_combat.snapshot(), "abilities": abilities.snapshot(), "ultimates": ultimates.snapshot(), "run_time": run_time}
+
+func buy_luna_with_petals() -> bool:
+	if petals < GuestRoster.LUNA_PRICE or not checkpoint():
+		return false
+	if profile.unlock_luna_with_petals(run_id) != OK:
+		return false
+	reconcile_luna_petal_purchase()
+	sound.play("reward")
+	return true
+
+func reconcile_luna_petal_purchase() -> void:
+	if luna_petals_debited or not profile.has_luna_petal_purchase(run_id):
+		return
+	# The profile receipt can survive a close before the active run records its debit.
+	petals = maxi(0, int(petals) - GuestRoster.LUNA_PRICE)
+	luna_petals_debited = true
+	checkpoint()
 
 func resume_run() -> void:
 	if not pending_result.is_empty():
@@ -567,6 +897,11 @@ func resume_run() -> void:
 	var state = RunProfile.read_json(SAVE)
 	if not state.has("screen") or recover_terminal_result(state):
 		return
+	restore_run_snapshot(state)
+
+# Restores a supplied snapshot without reading the solo save file.
+# Online snapshots must not grant offline profile progress as a side effect.
+func restore_run_snapshot(state: Dictionary, online := false) -> void:
 	var saved_floor_index = int(state.get("floor_index", -1))
 	var saved_manifest: Variant = state.get("floor_manifest", {})
 	var saved_room_id = str(state.get("room_id", ""))
@@ -582,7 +917,7 @@ func resume_run() -> void:
 	route_history.assign(state.get("route_history", []))
 	room_complete = bool(state.get("room_complete", false))
 	room_clock = float(state.get("room_clock", 0.0))
-	room_arrival = clampf(float(state.get("room_arrival", 0.0)), 0.0, ROOM_ARRIVAL)
+	room_arrival = clampf(float(state.get("room_arrival", 0.0)), 0.0, BOSS_ARRIVAL)
 	elite_heal_drops.clear()
 	var saved_drops: Variant = state.get("elite_heal_drops", [])
 	if saved_drops is Array:
@@ -594,7 +929,9 @@ func resume_run() -> void:
 	merchant.restore(state.get("merchant"))
 	curses.restore(state.get("curses"))
 	screen = state.screen
-	hero = int(state.hero)
+	hero = clampi(int(state.hero), 0, NAMES.size() - 1)
+	guest_combat.restore(state.get("guest_combat", {}))
+	luna_combat.restore(state.get("luna_combat", {}))
 	acquired_upgrade_id = ""
 	upgrades.restore(state.get("run_upgrades"), hero)
 	restore_lily_repeat(state.get("lily_repeat"))
@@ -609,7 +946,8 @@ func resume_run() -> void:
 	snare_thread.restore(state.get("snare_thread"))
 	armory.restore(hero, state.get("armory"))
 	painted_evolution.restore(state.get("painted_evolution"))
-	codex.observe_weapon(armory.for_hero(hero))
+	if not online:
+		codex.observe_weapon(armory.for_hero(hero))
 	reward_weapon_id = str(state.get("reward_weapon_id", ""))
 	if not Weapons.DEFINITIONS.has(reward_weapon_id) or not Weapons.usable_by(reward_weapon_id, hero) \
 			or reward_weapon_id == armory.for_hero(hero):
@@ -619,9 +957,10 @@ func resume_run() -> void:
 	if run_id.is_empty():
 		run_id = RunProfile.legacy_run_id(run_seed, hero)
 	depth = int(state.depth)
-	hp = int(state.hp)
+	hp = mini(int(state.hp), HEALTH[hero])
 	resource = int(state.resource)
 	petals = int(state.petals)
+	luna_petals_debited = bool(state.get("luna_petals_debited", false))
 	bonus = int(state.bonus)
 	route = int(state.get("route", 0))
 	player = Vector2(state.x, state.y)
@@ -641,6 +980,10 @@ func resume_run() -> void:
 	for foe: Dictionary in foes:
 		if foe.get("boss", false):
 			restore_boss_health(foe)
+			if active_biome == AstralCore.CORE and floor_index < Dungeon.BIOME_COUNT:
+				if not foe.has("biome"):
+					foe.biome = active_biome
+				AstralCore.configure_capstone(foe)
 	combat_status.restore(state.get("combat_status"))
 	combat_status.restore_foes(foes)
 	bolts = state.get("bolts", [])
@@ -666,7 +1009,8 @@ func resume_run() -> void:
 			twin_moon_sequences.append(int(saved_sequence))
 	if not relics.restore(state.get("relics", {})):
 		relics.reset()
-	codex.observe_relics(relics.owned)
+	if not online:
+		codex.observe_relics(relics.owned)
 	reward_relic_id = str(state.get("reward_relic_id", ""))
 	if not state.has("reward_relic_id") and floor_index >= 0 and room_kind == "boss" and (pending_chest or screen == "reward"):
 		reward_relic_id = boss_relic_offer()
@@ -684,7 +1028,7 @@ func resume_run() -> void:
 	facing = Vector2(direction[0], direction[1])
 	var dash = state.get("dash", [0.0, 0.0, 0.0])
 	dash_vector = Vector2(dash[0], dash[1])
-	dash_remaining = float(dash[2])
+	dash_remaining = 0.0 if hero == 1 else float(dash[2])
 	if int(state.get("layout", 1)) < CURRENT_LAYOUT:
 		player = migrate_position(player)
 		for i in range(foes.size()):
@@ -697,6 +1041,8 @@ func resume_run() -> void:
 			var spot = migrate_position(target(bolt))
 			bolt.x = spot.x
 			bolt.y = spot.y
+	if not online:
+		reconcile_luna_petal_purchase()
 
 func migrate_position(old: Vector2) -> Vector2:
 	var u = clampf(inverse_lerp(40, 350, old.x), 0.0, 1.0)
@@ -763,12 +1109,20 @@ func flush_finalization() -> bool:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
+		cancel_bow_charge()
+		cancel_seed_hold()
+		cancel_roster_gesture()
+		cancel_ability_hold()
 		arcade_backgrounded = true
 		reset_joystick()
 		checkpoint()
 	if what == NOTIFICATION_APPLICATION_RESUMED:
 		arcade_backgrounded = false
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		cancel_bow_charge()
+		cancel_seed_hold()
+		cancel_roster_gesture()
+		cancel_ability_hold()
 		reset_joystick()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and not sound.shutting_down:
 		checkpoint()
@@ -793,6 +1147,8 @@ func reset_joystick() -> void:
 	stick = Vector2.ZERO
 
 func reset_run_input() -> void:
+	cancel_bow_charge()
+	cancel_ability_hold()
 	reset_joystick()
 	reset_aim_preview()
 	run_paused = false
@@ -804,6 +1160,12 @@ func in_movement_region(point: Vector2) -> bool:
 		and (point.x >= center_x if preferences.left_handed else point.x < center_x)
 
 func press_screen_touch(index: int, point: Vector2) -> void:
+	if online_revive_tap(point):
+		return
+	if begin_ability_hold(index, point) or begin_seed_hold(index, point) or begin_roster_gesture(index, point):
+		return
+	if point.distance_to(touch_position(ATTACK)) < 32.0 and begin_bow_charge(index):
+		return
 	aim_mouse = false
 	var action := preview_button_at(point)
 	if not action.is_empty():
@@ -848,37 +1210,240 @@ func preview_action() -> String:
 		return preview_button_at(touch_position(control))
 	return preview_button_at(get_local_mouse_position()) if aim_mouse else ""
 
+func begin_seed_hold(pointer: int, point: Vector2) -> bool:
+	if screen != "garden" or not View.SEED_BALANCE.has_point(point):
+		return false
+	if seed_hold_pointer == -2:
+		seed_hold_pointer = pointer
+		seed_hold_start = visual_clock
+		seed_hold_counted = false
+	return true
+
+func cancel_seed_hold() -> void:
+	seed_hold_pointer = -2
+	seed_hold_counted = false
+
+func tick_seed_hold(delta: float) -> void:
+	seed_grant_left = maxf(0.0, seed_grant_left - delta)
+	if screen != "garden":
+		cancel_seed_hold()
+	elif seed_hold_pointer != -2 and not seed_hold_counted and visual_clock - seed_hold_start >= GuestRoster.SEED_HOLD_SECONDS:
+		seed_hold_counted = true
+		if profile.add_garden_seeds(GuestRoster.SEED_GRANT) == OK:
+			garden_seeds = profile.garden_seeds
+			seed_grant_left = 2.0
+			sound.play("reward")
+		else:
+			sound.play("cancel")
+
+func open_roster() -> void:
+	cancel_roster_gesture()
+	roster_first = clampi(int(hero) - View.ROSTER_ROWS + 1, 0, roster_last_first())
+	screen = "roster"
+
+func roster_last_first() -> int:
+	return maxi(0, NAMES.size() - View.ROSTER_ROWS)
+
+func scroll_roster(first: int) -> void:
+	var next := clampi(first, 0, roster_last_first())
+	if next != roster_first:
+		roster_first = next
+		sound.play("ui")
+
+func begin_roster_gesture(pointer: int, point: Vector2) -> bool:
+	if screen != "roster" or not View.ROSTER_LIST.has_point(point):
+		return false
+	if roster_pointer == ROSTER_NO_POINTER:
+		roster_pointer = pointer
+		roster_press = point
+		roster_press_first = roster_first
+		roster_dragged = false
+	return true
+
+func update_roster_gesture(point: Vector2) -> void:
+	var travel := point - roster_press
+	roster_dragged = roster_dragged or travel.length_squared() > ROSTER_TAP_SLOP * ROSTER_TAP_SLOP
+	if roster_dragged:
+		var rows := floori((absf(travel.y) + 0.5 * View.ROSTER_STRIDE) / View.ROSTER_STRIDE)
+		scroll_roster(roster_press_first - rows * signi(roundi(travel.y)))
+
+func cancel_roster_gesture() -> void:
+	roster_pointer = ROSTER_NO_POINTER
+	roster_dragged = false
+
+func end_roster_gesture(point: Vector2, canceled := false) -> void:
+	if not canceled:
+		update_roster_gesture(point)
+	var is_tap: bool = not canceled and not roster_dragged and screen == "roster" and View.ROSTER_LIST.has_point(point)
+	cancel_roster_gesture()
+	if is_tap:
+		tap(point)
+
+func ability_inspection_panel() -> String:
+	if run_paused:
+		return "pause" if not confirm_end_run and menu_motion.pause_panel == "abilities" else ""
+	return "roster" if screen == "roster" else ""
+
+func begin_ability_hold(pointer: int, point: Vector2) -> bool:
+	var panel := ability_inspection_panel()
+	if panel.is_empty():
+		return false
+	for ability: int in View.inspectable_abilities(hero):
+		var bounds := PauseView.ability_rect(self, ability) if panel == "pause" else View.roster_ability_rect(hero, ability)
+		if not bounds.has_point(point):
+			continue
+		if ability_hold_pointer == ROSTER_NO_POINTER:
+			ability_hold_pointer = pointer
+			ability_hold_id = ability
+			ability_hold_hero = hero
+			ability_hold_started = visual_clock
+			ability_hold_panel = panel
+			ability_hold_bounds = bounds
+		return true
+	return false
+
+func cancel_ability_hold() -> void:
+	ability_hold_pointer = ROSTER_NO_POINTER
+	ability_hold_id = -1
+	ability_hold_hero = -1
+	ability_hold_panel = ""
+
+func move_ability_hold(point: Vector2) -> void:
+	if not ability_hold_bounds.grow(12.0).has_point(point):
+		cancel_ability_hold()
+
+func ability_hold_valid() -> bool:
+	return ability_hold_pointer != ROSTER_NO_POINTER and ability_hold_hero == hero \
+		and ability_hold_panel == ability_inspection_panel()
+
+func inspected_ability() -> int:
+	if ability_hold_valid() and visual_clock - ability_hold_started >= ABILITY_INSPECT_DELAY:
+		return ability_hold_id
+	return -1
+
+func choose_whi_mode(mode: int) -> void:
+	if is_instance_valid(online_peer):
+		if screen == "fight" and not run_paused and not online_spectating and mode in [0, 1, 2]:
+			online_peer.session.action("mode_%d" % mode)
+		return
+	if hero == GuestRoster.WHI and screen == "fight" and not run_paused and chest_open_time <= 0.0 \
+			and not room_complete and not ultimates.locks_movement() and guest_combat.trance_left <= 0.0:
+		guest_combat.set_mode(self, mode)
+
+func begin_bow_charge(pointer: int) -> bool:
+	if hero != 3 or screen != "fight" or run_paused or pending_chest or room_complete or chest_open_time > 0.0:
+		return false
+	if attack_pointer == NO_ATTACK_POINTER:
+		attack_pointer = pointer
+		attack_held_for = 0.0
+		bow_release = -1.0
+	return true
+
+func bow_charge_ratio() -> float:
+	return smoothstep(0.14, CHARGE_TIME, attack_held_for) if attack_pointer != NO_ATTACK_POINTER else 0.0
+
+func release_bow_charge(canceled := false) -> void:
+	var charge := bow_charge_ratio()
+	cancel_bow_charge()
+	if not canceled and screen == "fight" and not run_paused and not pending_chest and not room_complete:
+		if is_instance_valid(online_peer):
+			act("attack", charge)
+		else:
+			bow_release = charge
+
+func cancel_bow_charge() -> void:
+	attack_pointer = NO_ATTACK_POINTER
+	attack_held_for = 0.0
+	bow_release = -1.0
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and not event.canceled:
 			press_screen_touch(event.index, event.position)
+		elif event.index == ability_hold_pointer:
+			cancel_ability_hold()
+		elif event.index == attack_pointer:
+			release_bow_charge(event.canceled)
+		elif event.index == seed_hold_pointer:
+			cancel_seed_hold()
+		elif event.index == roster_pointer:
+			end_roster_gesture(event.position, event.canceled)
 		elif event.index == aim_touch_id:
 			release_aim_touch(event.position, event.canceled)
 		elif event.index == joystick_id:
 			reset_joystick()
-	elif event is InputEventScreenDrag and event.index == joystick_id:
-		update_stick(event.position)
+	elif event is InputEventScreenDrag:
+		if event.index == ability_hold_pointer:
+			move_ability_hold(event.position)
+		elif event.index == seed_hold_pointer and not View.SEED_BALANCE.has_point(event.position):
+			cancel_seed_hold()
+		elif event.index == roster_pointer:
+			update_roster_gesture(event.position)
+		elif event.index == joystick_id:
+			update_stick(event.position)
 	elif event is InputEventMouseMotion:
+		if seed_hold_pointer == -1 and not View.SEED_BALANCE.has_point(event.position):
+			cancel_seed_hold()
+		if roster_pointer == ROSTER_MOUSE:
+			update_roster_gesture(event.position)
+		if ability_hold_pointer == ROSTER_MOUSE:
+			move_ability_hold(event.position)
 		aim_mouse = true
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		tap(event.position)
+	elif event is InputEventMouseButton:
+		if event.pressed and screen == "roster" and View.ROSTER_LIST.has_point(event.position):
+			if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+				scroll_roster(roster_first + (-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1))
+				return
+		if event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if event.pressed:
+			if begin_ability_hold(ROSTER_MOUSE, event.position):
+				return
+			if event.position.distance_to(touch_position(ATTACK)) < 32.0 and begin_bow_charge(MOUSE_ATTACK_POINTER):
+				return
+			if not begin_seed_hold(-1, event.position) and not begin_roster_gesture(ROSTER_MOUSE, event.position):
+				tap(event.position)
+		elif ability_hold_pointer == ROSTER_MOUSE:
+			cancel_ability_hold()
+		elif attack_pointer == MOUSE_ATTACK_POINTER:
+			release_bow_charge()
+		elif seed_hold_pointer == -1:
+			cancel_seed_hold()
+		elif roster_pointer == ROSTER_MOUSE:
+			end_roster_gesture(event.position)
+	elif event is InputEventKey and not event.pressed and event.keycode == KEY_J and attack_pointer == KEY_ATTACK_POINTER:
+		release_bow_charge()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if screen == "arcade_practice" and event.keycode == KEY_ESCAPE:
 			arcade.settle(self)
 			return
 		if screen in ["minigame", "arcade_practice"] and not run_paused and event.keycode != KEY_ESCAPE:
+			if is_instance_valid(online_peer):
+				online_peer.session.key(event.keycode)
+				return
 			if event.keycode in [KEY_ENTER, KEY_KP_ENTER] and arcade.outcome != ArcadeSession.PLAYING:
 				arcade.settle(self)
 			else:
 				arcade.key(self, event.keycode)
 			return
 		match event.keycode:
-			KEY_J: act("attack")
+			KEY_J:
+				if not begin_bow_charge(KEY_ATTACK_POINTER):
+					act("attack")
 			KEY_K: act("dodge")
 			KEY_L: act("skill")
 			KEY_U: act("ultimate")
+			KEY_T:
+				if hero == GuestRoster.LUNA:
+					act("ultimate")
+			KEY_1: choose_whi_mode(0)
+			KEY_2: choose_whi_mode(1)
+			KEY_3: choose_whi_mode(2)
 			KEY_I: use_pocket()
 			KEY_E: interact()
+			KEY_UP, KEY_DOWN:
+				if screen == "roster":
+					scroll_roster(roster_first + (-1 if event.keycode == KEY_UP else 1))
 			KEY_ESCAPE:
 				if confirm_end_run:
 					cancel_end_run()
@@ -916,6 +1481,23 @@ func tap(pos: Vector2) -> void:
 		sound.play("ui")
 
 func handle_tap(pos: Vector2) -> void:
+	if screen == "summary" and not online_final_leaderboard.is_empty():
+		if View.SECOND_OPTION.has_point(pos):
+			online_final_leaderboard.clear()
+			screen = "garden"
+		return
+	if is_instance_valid(online_peer) and screen == "summary":
+		if View.SECOND_OPTION.has_point(pos):
+			leave_online_run()
+		return
+	if online_revive_tap(pos):
+		return
+	if is_instance_valid(online_peer) and not run_paused and screen != "fight":
+		if View.PAUSE.has_point(pos):
+			suspend_run()
+		else:
+			online_peer.session.tap(pos)
+		return
 	if run_paused:
 		menu_motion.record_press(pause_menu_screen(), pos)
 		PauseView.activate(self, pos)
@@ -931,7 +1513,9 @@ func handle_tap(pos: Vector2) -> void:
 				if FileAccess.file_exists(SAVE):
 					resume_run()
 				else:
-					screen = "roster"
+					open_roster()
+			elif View.MULTIPLAYER_LINK.has_point(pos):
+				open_multiplayer()
 			elif View.GARDEN_LINK.has_point(pos):
 				screen = "garden_hub"
 			elif View.SETTINGS_LINK.has_point(pos):
@@ -947,7 +1531,7 @@ func handle_tap(pos: Vector2) -> void:
 					if FileAccess.file_exists(SAVE):
 						resume_run()
 					else:
-						screen = "roster"
+						open_roster()
 				"codex":
 					screen = "codex"
 				"seeds":
@@ -998,22 +1582,33 @@ func handle_tap(pos: Vector2) -> void:
 		"relic_ledger":
 			RelicLedger.tap(self, pos)
 		"roster":
+			if View.roster_ability_at(hero, pos) >= 0:
+				return
 			if FileAccess.file_exists(SAVE):
 				if View.ROSTER_BACK.has_point(pos):
 					screen = "garden"
 				else:
 					resume_run()
 				return
-			for i in range(NAMES.size()):
-				if View.roster_hit(i).has_point(pos):
-					if hero != i:
+			for row: int in View.ROSTER_ROWS:
+				var index := roster_first + row
+				if index < NAMES.size() and View.roster_hit(row).has_point(pos):
+					if hero != index:
 						selected_weapon = ""
-					hero = i
+						selected_relic = ""
+					hero = index
 					return
 			if View.ROSTER_BACK.has_point(pos):
 				screen = "garden"
+			elif View.ROSTER_UP.has_point(pos):
+				scroll_roster(roster_first - 1)
+			elif View.ROSTER_DOWN.has_point(pos):
+				scroll_roster(roster_first + 1)
 			elif View.DESCEND.has_point(pos):
-				screen = "preparation"
+				if GuestRoster.is_unlocked(profile, hero):
+					screen = "preparation"
+				else:
+					open_seed_shop(SeedShop.Shelf.HEROINES, GuestRoster.KEYS[hero - GuestRoster.MINA])
 		"preparation":
 			if Prep.BACK.has_point(pos):
 				screen = "roster"
@@ -1035,7 +1630,29 @@ func handle_tap(pos: Vector2) -> void:
 				if not relic_id.is_empty():
 					selected_relic = relic_id
 		"fight":
-			if optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self, pos):
+			if is_instance_valid(online_peer):
+				if hero == GuestRoster.WHI and View.tap_whi_stance(self, pos):
+					return
+				if pos.distance_to(touch_position(ATTACK)) < 32:
+					act("attack")
+				elif pos.distance_to(touch_position(DODGE)) < 25:
+					act("dodge")
+				elif hero != GuestRoster.LUNA and pos.distance_to(touch_position(SKILL)) < 27:
+					act("skill")
+				elif pos.distance_to(touch_position(ULTIMATE)) < 27:
+					act("ultimate")
+				elif pos.distance_to(touch_position(POCKET)) < 25:
+					online_peer.session.use_pocket()
+				elif (pending_chest or uses_room_choice()) and Rect2(chest_position + Vector2(-39, -69), Vector2(78, 89)).has_point(pos):
+					online_peer.session.interact()
+				else:
+					online_peer.session.tap(pos)
+				return
+			if hero == GuestRoster.WHI and View.tap_whi_stance(self, pos):
+				return
+			if hero == 0 and pos.distance_to(touch_position(SKILL)) < 27:
+				act("skill")
+			elif optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self, pos):
 				return
 			elif optional_arena_boss() == OptionalBosses.VELVET and OptionalBosses.sever_velvet_string(self, pos):
 				return
@@ -1049,7 +1666,7 @@ func handle_tap(pos: Vector2) -> void:
 				act("attack")
 			elif pos.distance_to(touch_position(DODGE)) < 25:
 				act("dodge")
-			elif pos.distance_to(touch_position(SKILL)) < 27:
+			elif hero != GuestRoster.LUNA and pos.distance_to(touch_position(SKILL)) < 27:
 				act("skill")
 			elif pos.distance_to(touch_position(ULTIMATE)) < 27:
 				act("ultimate")
@@ -1120,7 +1737,7 @@ func open_seed_shop(shelf: int = SeedShop.Shelf.ITEMS, focus_offer: String = "")
 	var profile_error: Error = profile.load_local()
 	garden_seeds = profile.garden_seeds
 	seed_shop_feedback = "" if profile_error == OK else "seed_shop.profile_error"
-	seed_shop_shelf = clampi(shelf, SeedShop.Shelf.ITEMS, SeedShop.Shelf.MEDIA)
+	seed_shop_shelf = clampi(shelf, SeedShop.Shelf.ITEMS, SeedShop.Shelf.HEROINES)
 	seed_shop_page = SeedShop.page_of(seed_shop_shelf, focus_offer)
 	seed_shop_focus = focus_offer
 	screen = "seed_shop"
@@ -1150,6 +1767,8 @@ func purchase_seed_offer(unlock_id: String) -> void:
 				seed_shop_feedback = "seed_shop.cartridge_success"
 			elif unlock_id in GardenMedia.TAPES:
 				seed_shop_feedback = "seed_shop.vhs_success"
+			elif GuestRoster.OFFERS.has(unlock_id):
+				seed_shop_feedback = "seed_shop.hero_success"
 			sound.play("reward")
 		ERR_ALREADY_EXISTS:
 			seed_shop_feedback = "seed_shop.already_owned"
@@ -1159,6 +1778,7 @@ func purchase_seed_offer(unlock_id: String) -> void:
 			seed_shop_feedback = "seed_shop.save_error"
 
 func suspend_run() -> void:
+	cancel_bow_charge()
 	if run_paused or screen not in ACTIVE_RUN_SCREENS:
 		return
 	sound.play("cancel")
@@ -1186,6 +1806,9 @@ func cancel_end_run() -> void:
 func end_paused_run() -> void:
 	if not run_paused or not confirm_end_run:
 		return
+	if is_instance_valid(online_peer):
+		leave_online_run()
+		return
 	if screen == "clear":
 		finish_run("Garden restored", "clear")
 	else:
@@ -1195,6 +1818,10 @@ func uses_room_choice() -> bool:
 	return floor_index >= 0 and not room_complete and room_kind in ["shop", "rest", "event", "curse"]
 
 func interact() -> void:
+	if is_instance_valid(online_peer):
+		if not run_paused:
+			online_peer.session.interact()
+		return
 	if screen != "fight" or run_paused:
 		return
 	if optional_arena_boss() == OptionalBosses.CHOIR and OptionalBosses.mute_choir_bell(self):
@@ -1224,6 +1851,10 @@ func open_chest() -> void:
 		checkpoint()
 
 func use_pocket() -> void:
+	if is_instance_valid(online_peer):
+		if not run_paused:
+			online_peer.session.use_pocket()
+		return
 	if screen == "fight" and not run_paused and boss_victory.left <= 0.0 \
 			and chest_open_time <= 0.0 and not ultimates.locks_movement():
 		pocket.consume(self)
@@ -1362,8 +1993,12 @@ func advance() -> void:
 	enter_room()
 
 func ultimate_ready() -> bool:
-	return screen == "fight" and boss_victory.left <= 0.0 and not foes.is_empty() \
-		and chest_open_time <= 0.0 and ultimates.can_cast(self)
+	if screen != "fight" or run_paused or boss_victory.left > 0.0 or foes.is_empty() or chest_open_time > 0.0 \
+			or (room_arrival > 0.0 and entrance_boss()):
+		return false
+	if hero == GuestRoster.LUNA:
+		return room_arrival <= 0.0 and luna_combat.can_transform(self)
+	return guest_combat.stun_left <= 0.0 and ultimates.can_cast(self)
 
 static func boss_health(encounter_depth: int) -> int:
 	var rank := clampi(encounter_depth, 0, 80)
@@ -1394,13 +2029,35 @@ static func enemy_power(encounter_depth: int, boss: bool, elite: bool) -> float:
 	return 1.0 + later + (0.09 * smoothstep(0.0, 24.0, float(encounter_depth)) if boss else 0.0) + (0.10 if elite else 0.0)
 
 func dodge_cooldown() -> float:
+	if hero == 1:
+		return HeroAbilities.FROST_RECHARGE * upgrades.skill_factor(hero) * relics.skill_cooldown_factor()
+	if hero == GuestRoster.LUNA:
+		if luna_combat.in_wolf():
+			return 0.0
+		return LunaCombat.HUMAN_DODGE_CD * upgrades.dodge_factor() * curses.dodge_factor() * relics.skill_cooldown_factor()
+	if GuestRoster.is_guest(hero):
+		return 0.0
 	return float(DASH_RECHARGE[hero]) * upgrades.dodge_factor() * curses.dodge_factor()
 
 func basic_attack_interval() -> float:
-	return float(Weapons.item(armory.for_hero(hero)).interval) * upgrades.attack_factor() * curses.attack_interval_factor()
+	var interval := float(Weapons.item(armory.for_hero(hero)).interval)
+	if hero == GuestRoster.LUNA and luna_combat.in_wolf():
+		interval = LunaCombat.CLAW_INTERVAL
+	elif hero == GuestRoster.WHI and guest_combat.trance_left > 0.0:
+		interval = 0.19
+	elif hero == GuestRoster.MINA and guest_combat.rage_left > 0.0:
+		interval /= GuestCombat.RAGE_ATTACK_SPEED
+	elif ultimates.valkyrie_active():
+		interval *= 0.62
+	return interval * upgrades.attack_factor() * curses.attack_interval_factor()
 
 func skill_cooldown() -> float:
+	if hero == GuestRoster.MINA:
+		return GuestCombat.RAGE_COOLDOWN
 	return HeroAbilities.cooldown_for_game(self) * upgrades.skill_factor(hero) * relics.skill_cooldown_factor()
+
+func basic_damage_bonus(amount: int) -> int:
+	return floori(amount * 0.5) if hero == 2 else amount
 
 func assisted_aim(maximum: float, prefers_marks := false) -> Vector2:
 	var best_point := Vector2.INF
@@ -1434,7 +2091,7 @@ func prepared_weapon() -> String:
 	return Weapons.starter(hero)
 
 func reward_has_tea() -> bool:
-	return floor_index < 0 or RunEconomy.chest_has_tea(room_kind, Dungeon.stream_seed(run_seed, floor_index, room_id, "reward"))
+	return hero == GuestRoster.LUNA or floor_index < 0 or RunEconomy.chest_has_tea(room_kind, Dungeon.stream_seed(run_seed, floor_index, room_id, "reward"))
 
 func reward_healing() -> int:
 	return healing_amount(20 if floor_index < 0 else RunEconomy.LOOT_HEAL, "reward")
@@ -1475,7 +2132,9 @@ func player_hit_amount(amount: int) -> int:
 	var result := curses.attack_damage(amount, hp, HEALTH[hero])
 	if result <= 0:
 		return 0
-	if hero == 3:
+	if hero == GuestRoster.MINA:
+		result = maxi(1, roundi(result * guest_combat.damage_factor()))
+	elif hero == 3:
 		result = maxi(1, roundi(result * 0.9))
 	elif hero == 4 and relics.has_relic(Relics.IRIS_DICE) and randf() < 0.15:
 		result *= 2
@@ -1517,12 +2176,36 @@ func reward_weapon_offer() -> String:
 		return chapter_weapon
 	return armory.offer(hero, int(current_room().reward_seed))
 
-func act(action: String) -> void:
-	if boss_victory.left > 0.0:
+func act(action: String, charge := 0.0) -> void:
+	if is_instance_valid(online_peer):
+		if screen == "fight" and not run_paused and not online_spectating:
+			online_peer.session.action(action, charge)
 		return
-	if screen != "fight" or run_paused or chest_open_time > 0.0 or abilities.locks_movement() or ultimates.locks_movement():
+	if boss_victory.left > 0.0 or (room_arrival > 0.0 and entrance_boss()):
 		return
-	if action == "dodge" and dodge_time <= 0:
+	if screen != "fight" or run_paused or chest_open_time > 0.0 or ultimates.locks_movement():
+		return
+	if abilities.locks_movement():
+		if hero == 2 and action == "skill":
+			abilities.buffer_leap()
+		return
+	if hero == GuestRoster.MINA:
+		if guest_combat.stun_left > 0.0:
+			return
+		if action == "skill":
+			guest_combat.cast_rage(self)
+			return
+		if ultimates.mina_spinning():
+			return
+	if hero == GuestRoster.LUNA and action == "dodge":
+		if dodge_time <= 0.0 and dash_remaining <= 0.0:
+			luna_combat.start_dash(self)
+		return
+	if action == "dodge" and hero == 1:
+		if dodge_time <= 0.0 and room_arrival <= 0.0 and not pending_chest and not room_complete:
+			abilities.cast_frost(self)
+		return
+	if action == "dodge" and not GuestRoster.is_guest(hero) and dodge_time <= 0:
 		talents.start_dodge()
 		honest_eyes_ready = relics.has_relic(Relics.HONEST_EYES)
 		if relics.has_relic(Relics.FEATHER_CROWN):
@@ -1543,6 +2226,11 @@ func act(action: String) -> void:
 		if recall.is_finite():
 			checkpoint.call_deferred()
 	elif action == "skill":
+		if hero == GuestRoster.WHI:
+			choose_whi_mode((guest_combat.mode + 1) % GuestRoster.MODES.size())
+			return
+		if hero == GuestRoster.LUNA:
+			return
 		var origin: Vector2 = player
 		if abilities.cast(self):
 			if relics.has_relic(Relics.BRASSWING_PIN):
@@ -1551,10 +2239,17 @@ func act(action: String) -> void:
 			painted_evolution.mark_exit(self, origin)
 			sound.hero_attack(hero, true)
 	elif action == "ultimate":
-		if ultimate_ready() and ultimates.cast(self):
+		if not ultimate_ready():
+			return
+		if hero == GuestRoster.LUNA:
+			luna_combat.queue_transform(self)
+		elif ultimates.cast(self):
 			checkpoint.call_deferred()
 	elif action == "attack" and attack_time <= 0 and lily_repeat.is_empty():
-		sound.hero_attack(hero)
+		if hero == GuestRoster.LUNA and dash_remaining > 0.0:
+			return
+		if not GuestRoster.is_guest(hero):
+			sound.hero_attack(hero)
 		var id := armory.for_hero(hero)
 		var weapon := Weapons.item(id)
 		attack_time = basic_attack_interval()
@@ -1562,25 +2257,36 @@ func act(action: String) -> void:
 		if SnareThread.can_pin(id) and manual_aim.length_squared() > 0.04:
 			facing = manual_aim.normalized()
 		else:
-			facing = assisted_direction(weapon.aim, hero == 3)
+			var aim: float = LunaCombat.CLAW_REACH + 12.0 if hero == GuestRoster.LUNA and luna_combat.in_wolf() else float(weapon.aim)
+			facing = assisted_direction(aim, hero == 3)
 		attack_visual_facing = facing
 		lily_repeat_visual = false
 		var effect = relics.on_basic_attack(hp, id == Relics.ROSEWALL_EXECUTION)
 		effect.weapon_id = id
 		effect.weapon_attack = armory.begin_attack(self, id)
 		talents.begin_basic(effect.weapon_attack)
+		effect.charge = charge
 		var guard_charge_used := false
-		if hero in [1, 3]:
+		var variant := -1
+		if hero == GuestRoster.LUNA:
+			variant = int(luna_combat.in_wolf())
+			luna_combat.basic(self, bool(variant), effect, false)
+		elif GuestRoster.is_guest(hero):
+			variant = guest_combat.take_variant(hero)
+			guest_combat.basic(self, variant, effect, false)
+		elif hero in [1, 3]:
 			fire_basic_shot(effect)
 		else:
-			lily_finisher_flash = id == "lilyblade" and advance_lily_combo()
+			lily_finisher_flash = hero == 0 and advance_lily_combo()
+			effect.angela_stage = angela_attack_stage if hero == 0 else 0
 			guard_charge_used = basic_slash(effect, lily_finisher_flash)
 		if curses.has_curse(RunCurses.LILY):
 			lily_repeat = {"left": LILY_REPEAT_DELAY, "weapon_id": id, "dx": facing.x, "dy": facing.y,
-				"weapon_attack": int(effect.weapon_attack), "finisher": lily_finisher_flash and hero == 0}
+				"weapon_attack": int(effect.weapon_attack), "finisher": lily_finisher_flash and hero == 0, "guest_variant": variant,
+				"angela_stage": int(effect.get("angela_stage", 0)), "charge": charge}
 		if effect.pierce or effect.wide_cone or guard_charge_used or not lily_repeat.is_empty():
 			checkpoint.call_deferred()
-		flash = SWING_DURATION
+		flash = swing_duration()
 
 func restore_lily_repeat(saved: Variant) -> void:
 	lily_repeat.clear()
@@ -1594,7 +2300,10 @@ func restore_lily_repeat(saved: Variant) -> void:
 		return
 	lily_repeat = {"left": clampf(float(saved.get("left", 0.0)), 0.0, LILY_REPEAT_DELAY),
 		"weapon_id": id, "dx": direction.x, "dy": direction.y,
-		"weapon_attack": int(saved.get("weapon_attack", -1)), "finisher": bool(saved.get("finisher", false))}
+		"weapon_attack": int(saved.get("weapon_attack", -1)), "finisher": bool(saved.get("finisher", false)),
+		"guest_variant": int(saved.get("guest_variant", -1)),
+		"angela_stage": clampi(int(saved.get("angela_stage", 2 if saved.get("finisher", false) else 0)), 0, 2),
+		"charge": clampf(float(saved.get("charge", 0.0)), 0.0, 1.0)}
 
 func tick_lily_repeat(delta: float) -> void:
 	if lily_repeat.is_empty():
@@ -1609,15 +2318,25 @@ func tick_lily_repeat(delta: float) -> void:
 	attack_visual_facing = facing
 	lily_repeat_visual = true
 	lily_finisher_flash = bool(repeat.finisher)
+	angela_attack_stage = int(repeat.get("angela_stage", 0))
 	var effect := {"pierce": false, "wide_cone": false, "weapon_id": repeat.weapon_id,
-		"weapon_attack": int(repeat.weapon_attack), "lily_repeat": true}
-	if hero in [1, 3]:
+		"weapon_attack": int(repeat.weapon_attack), "lily_repeat": true,
+		"angela_stage": angela_attack_stage, "charge": float(repeat.get("charge", 0.0))}
+	if hero == GuestRoster.WHI and guest_combat.trance_left > 0.0:
+		repeat.guest_variant = 0
+	if hero == GuestRoster.LUNA:
+		luna_combat.basic(self, int(repeat.get("guest_variant", 0)) == 1, effect, true)
+	elif GuestRoster.is_guest(hero):
+		var variant := clampi(int(repeat.get("guest_variant", 0)), 0, 2)
+		guest_combat.basic(self, variant, effect, true)
+	elif hero in [1, 3]:
 		fire_basic_shot(effect)
 	else:
 		basic_slash(effect, lily_finisher_flash)
 	facing = original_facing
-	flash = SWING_DURATION
-	sound.play(GardenSoundstage.HERO_EFFECTS[hero], 0.90)
+	flash = swing_duration()
+	if not GuestRoster.is_guest(hero):
+		sound.play(GardenSoundstage.HERO_EFFECTS[hero], 0.90)
 	checkpoint.call_deferred()
 
 func fire_basic_shot(effect: Dictionary) -> void:
@@ -1625,14 +2344,21 @@ func fire_basic_shot(effect: Dictionary) -> void:
 	var weapon := Weapons.item(id)
 	var speed := maxf(1.0, float(weapon.get("speed", 0.0)))
 	var reach := float(weapon.reach)
-	var lifetime := (0.47 if hero == 1 else 0.89) if id == Weapons.starter(hero) else reach / speed
+	var lifetime := (0.47 if hero == 1 else 0.89) if hero in [1, 3] and id == Weapons.starter(hero) else reach / speed
 	if hero == 1:
 		lifetime *= 0.9 * (1.2 if relics.has_relic(Relics.ROSE_LENS) else 1.0)
 	var bolt = {"x": player.x, "y": player.y, "dx": facing.x, "dy": facing.y, "hero_projectile": hero,
 		"life": lifetime, "speed": speed, "weapon_id": id, "weapon_attack": int(effect.get("weapon_attack", -1))}
+	if hero == 3 and float(effect.get("charge", 0.0)) > 0.0:
+		var charge := float(effect.charge)
+		bolt.charge = charge
+		bolt.speed = speed * lerpf(1.0, 1.2, charge)
+		bolt.life = lifetime * lerpf(1.0, 1.14, charge)
+	if hero == GuestRoster.LUNA:
+		luna_combat.tag_shot(bolt)
 	if bool(effect.get("lily_repeat", false)):
 		bolt.lily_repeat = true
-	if effect.pierce or id == "hollowglass_bow":
+	if effect.pierce or id in ["hollowglass_bow", "graveglass_pistol"]:
 		bolt.remaining_hits = 2
 		bolt.hit_foes = []
 	if effect.wide_cone:
@@ -1651,20 +2377,24 @@ func fire_basic_shot(effect: Dictionary) -> void:
 func advance_lily_combo() -> bool:
 	if hero != 0:
 		return false
+	angela_attack_stage = lily_combo
 	lily_combo = (lily_combo + 1) % 3
-	lily_combo_time = 0.92
-	return lily_combo == 0
+	attack_time *= [1.0, 0.73, 1.34][angela_attack_stage]
+	lily_combo_time = maxf(1.05, attack_time + 0.45)
+	return angela_attack_stage == 2
 
 func basic_slash(effect: Dictionary, finisher := false) -> bool:
 	var id := str(effect.get("weapon_id", armory.for_hero(hero)))
 	var sequence := int(effect.get("weapon_attack", -1))
 	var weapon := Weapons.item(id)
-	var reach := 83.0 if finisher else float(weapon.reach)
+	var stage := int(effect.get("angela_stage", 0))
+	var reach := float(weapon.reach) + float([0.0, 8.0, 11.0][stage])
+	var damage_scale := float([1.0, 0.79, 1.54][stage])
 	var repeat := bool(effect.get("lily_repeat", false))
 	ground_hazards.sever_melee(self, player, facing, reach)
 	if finisher:
 		ground_hazards.trim(self, player, facing, reach)
-	var min_alignment = -0.40 if effect.wide_cone else 0.15
+	var min_alignment := -0.40 if effect.wide_cone else float([0.15, 0.76, 0.30][stage])
 	var rosewall := bool(effect.get("rosewall", false))
 	var followthrough := rosewall or bool(effect.get("ledger", false))
 	var struck := PackedInt32Array()
@@ -1687,7 +2417,7 @@ func basic_slash(effect: Dictionary, finisher := false) -> bool:
 			if in_pierce_lane and not ForgottenEncounters.blocked(self, player, point, 15.0):
 				pierced_front = true
 			var previous_hp := int(foe.hp)
-			strike(foe, finisher, id, sequence, 1.0, repeat)
+			strike(foe, finisher, id, sequence, damage_scale, repeat)
 			if followthrough:
 				struck.append(index)
 				if int(foe.hp) < previous_hp and distance < player.distance_to(anchor):
@@ -1699,7 +2429,7 @@ func basic_slash(effect: Dictionary, finisher := false) -> bool:
 		var foe: Dictionary = foes[beyond]
 		var point := target(foe)
 		var previous_hp := int(foe.hp)
-		strike(foe, finisher, id, sequence)
+		strike(foe, finisher, id, sequence, damage_scale, repeat)
 		if followthrough:
 			struck.append(beyond)
 			if not anchor.is_finite() and int(foe.hp) < previous_hp:
@@ -1711,25 +2441,27 @@ func basic_slash(effect: Dictionary, finisher := false) -> bool:
 	return false
 
 func strike(foe: Dictionary, finisher := false, weapon_id := "", sequence := -1, damage_scale := 1.0,
-		repeat := false) -> void:
+		repeat := false, base_damage := -1, damage_bonus := 0) -> void:
 	if int(foe.hp) <= 0:
 		return
 	foe.flash = 0.14
-	var close_bonus = 3 if hero == 2 and player.distance_squared_to(target(foe)) <= 40.0 * 40.0 else 0
+	var close_bonus: int = 1 if hero == 2 and player.distance_squared_to(target(foe)) <= 40.0 * 40.0 else 0
 	var id := weapon_id if Weapons.usable_by(weapon_id, hero) else armory.for_hero(hero)
 	var guard_counter := abilities.counter_bonus(self, foe) if not repeat else 0
 	var rose_counter := id == "royal_cleaver" and guard_counter > 0 and relics.rose_counter_ready(depth)
 	var rose_power := Relics.ROSE_COUNTER_BONUS if rose_counter else 0
-	var raw: int = int(Weapons.item(id).damage) + close_bonus + bonus + guard_counter + rose_power \
+	var weapon_damage: int = int(Weapons.item(id).damage) if base_damage < 0 else base_damage
+	var flat_bonus: int = damage_bonus + bonus + guard_counter + rose_power \
 		+ (ultimates.counter_bonus() if not repeat else 0)
 	if honest_eyes_ready:
-		raw += 3
+		flat_bonus += 3
 	var prince_bonus := not princes_pin_used and relics.has_relic(Relics.PRINCES_PIN)
 	if prince_bonus:
-		raw += 8
+		flat_bonus += 8
 	var count_moon_hit := sequence >= 0 and not repeat and relics.has_relic(Relics.TWIN_MOON_PENDANT) and sequence not in twin_moon_sequences
 	if count_moon_hit and twin_moon_hits == 3:
-		raw += 5
+		flat_bonus += 5
+	var raw := weapon_damage + close_bonus + basic_damage_bonus(flat_bonus)
 	var painted_flank := PaintedEvolution.flank(self, foe)
 	var pin_scale := 1.1 if brasswing_pin_left > 0.0 else 1.0
 	var amount := player_hit_amount(maxi(1, roundi(raw * damage_scale * pin_scale * (1.30 if painted_flank else 1.0))))
@@ -1746,7 +2478,8 @@ func strike(foe: Dictionary, finisher := false, weapon_id := "", sequence := -1,
 		sound.play("hit")
 		if repeat:
 			return
-		resource = mini(5, resource + 1)
+		if hero != GuestRoster.LUNA:
+			resource = mini(HeroUltimates.CHARGE, resource + 1)
 		if rose_counter:
 			relics.spend_rose_counter()
 			armory.add_trace("bloom", target(foe), target(foe), Color("#f0bbbd"))
@@ -1758,7 +2491,7 @@ func strike(foe: Dictionary, finisher := false, weapon_id := "", sequence := -1,
 	if loss < amount or foe.phase == ForgottenEncounters.LUNGE:
 		return
 	if id != "ribbon_string" or not was_marked:
-		armory.knockback(self, foe, 22.0 if finisher else (17.0 if hero == 2 else 8.0), id)
+		armory.knockback(self, foe, 22.0 if finisher else (31.0 if hero == 2 else 8.0), id)
 
 func defend_foe(foe: Dictionary, amount: int) -> int:
 	if ultimates.cue_time > 0.0 or endless.protected_at(target(foe)):
@@ -1797,6 +2530,11 @@ func clamp_position(pos: Vector2) -> Vector2:
 
 func _process(delta: float) -> void:
 	visual_clock += delta
+	tick_seed_hold(delta)
+	if screen != "roster" and roster_pointer != ROSTER_NO_POINTER:
+		cancel_roster_gesture()
+	if ability_hold_pointer != ROSTER_NO_POINTER and not ability_hold_valid():
+		cancel_ability_hold()
 	var browsing_jukebox: bool = screen == "jukebox"
 	sound.music_suppressed = browsing_jukebox and profile.has_unlock(GardenMedia.JUKEBOX)
 	if not browsing_jukebox and jukebox.player.stream != null:
@@ -1811,9 +2549,12 @@ func _process(delta: float) -> void:
 	else:
 		sound.sync("garden_hub" if browsing_jukebox else screen, active_biome, room_kind, boss_active)
 	menu_motion.advance(pause_menu_screen() if run_paused else screen, hero, selected_relic, get_local_mouse_position(), delta)
-	if screen != "fight" and joystick_id >= 0:
-		reset_joystick()
-	if screen in ["minigame", "arcade_practice"] and not run_paused and not arcade_backgrounded:
+	if screen != "fight":
+		if attack_pointer != NO_ATTACK_POINTER or bow_release >= 0.0:
+			cancel_bow_charge()
+		if joystick_id >= 0:
+			reset_joystick()
+	if screen in ["minigame", "arcade_practice"] and not run_paused and not arcade_backgrounded and not is_instance_valid(online_peer):
 		arcade.tick(self, delta)
 	world_image.visible = screen in ["fight", "room_choice", "talent", "forge"] \
 		or (screen == "minigame" and arcade.id == ArcadeCatalog.BOARD)
@@ -1822,6 +2563,17 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(online_peer):
+		if online_leaving and online_peer.socket.get_ready_state() == WebSocketPeer.STATE_CLOSED and Time.get_ticks_msec() / 1000.0 - online_leave_started > 2.0:
+			_show_online_departure_summary()
+			return
+		if attack_pointer != NO_ATTACK_POINTER and not run_paused:
+			attack_held_for = minf(CHARGE_TIME, attack_held_for + delta)
+		var direction := (stick + Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")).limit_length()
+		if screen != "fight" or run_paused or online_spectating:
+			direction = Vector2.ZERO
+		online_peer.session.move(direction)
+		return
 	if screen != "fight" or run_paused:
 		return
 	if boss_victory.left > 0.0:
@@ -1841,49 +2593,10 @@ func _physics_process(delta: float) -> void:
 			screen = "reward"
 			checkpoint()
 		return
-	run_time += delta
-	pocket.tick(delta)
-	armory.tick(self, delta)
-	upgrades.tick(delta)
-	var recovery_delta = delta * (RunItems.TONIC_RECOVERY if pocket.haste > 0.0 else 1.0)
-	attack_time -= recovery_delta
-	lily_combo_time = maxf(0.0, lily_combo_time - delta)
-	if lily_combo_time <= 0.0:
-		lily_combo = 0
-	dodge_time -= recovery_delta
-	feather_crown_left = maxf(0.0, feather_crown_left - delta)
-	brasswing_pin_left = maxf(0.0, brasswing_pin_left - delta)
-	velvet_ribbon_left = maxf(0.0, velvet_ribbon_left - delta)
-	skill_time -= recovery_delta
-	mercy -= delta
-	flash -= delta
-	var move = (stick + Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")).limit_length()
-	var before = player
-	var dodging: bool = dash_remaining > 0.0
-	if dodging:
-		player = slide_with_cover(player, dash_vector * minf(delta, dash_remaining))
-		talents.add_dash_step(self, before, player)
-		dash_remaining = maxf(0.0, dash_remaining - delta)
-	elif move.length() > 0.1 and not abilities.locks_movement() and not ultimates.locks_movement():
-		facing = move.normalized()
-		var haste_scale = RunItems.TONIC_MOVEMENT if pocket.haste > 0.0 else 1.0
-		var movement_scale := minf(ground_hazards.movement_scale(), combat_status.hero_movement_scale())
-		var walk_speed := float([143.0, 151.0, 167.0, 151.0, 175.0][hero]) * upgrades.movement_factor() * curses.movement_factor()
-		if feather_crown_left > 0.0:
-			walk_speed *= 1.15
-		if velvet_ribbon_left > 0.0:
-			walk_speed *= 1.15
-		if hero == 3:
-			walk_speed *= 1.05 * (1.1 if relics.has_relic(Relics.CAMELLIA_RIBBON) else 1.0)
-		player = slide_with_cover(player, move * walk_speed * haste_scale * movement_scale * delta)
-	painted_evolution.tick(self, before, delta)
-	abilities.tick(self, delta)
-	ultimates.tick(self, delta)
-	walk_distance = fposmod(walk_distance + player.distance_to(before), 64.0)
-	tick_lily_repeat(delta)
-	visual_velocity = visual_velocity.lerp((player - before) / maxf(delta, 0.001), minf(12.0 * delta, 1.0))
-	damage_flash = maxf(0.0, damage_flash - delta)
-	room_arrival = maxf(0.0, room_arrival - delta)
+	var hero_frame := advance_hero_frame(delta)
+	var before: Vector2 = hero_frame.before
+	var dodging: bool = hero_frame.dodging
+	var move: Vector2 = hero_frame.move
 	if room_arrival <= 0.0:
 		endless.tick(self, delta)
 		update_bolts(delta)
@@ -1894,6 +2607,7 @@ func _physics_process(delta: float) -> void:
 		if hp <= 0:
 			finish_run("The Garden claims another")
 		else:
+			abilities.tick_guard(delta)
 			checkpoint()
 		return
 	snare_thread.tick(self, thread_samples, delta)
@@ -1902,6 +2616,8 @@ func _physics_process(delta: float) -> void:
 		clockwork_floor.tick(self, delta)
 	var active_stride: bool = player.distance_to(before) > 78.0 * delta
 	combat_status.tick_hero(self, delta, active_stride or flash > 0.0)
+	# Keep the shield drawn on the last frame effective until that frame's hits have resolved.
+	abilities.tick_guard(delta)
 	talents.tick(self, delta, player.distance_to(before) > 3.0 * delta, dodging)
 	if hp <= 0:
 		finish_run("The Garden claims another")
@@ -1923,6 +2639,83 @@ func _physics_process(delta: float) -> void:
 	if save_time >= 0.5:
 		save_time = 0
 		checkpoint()
+
+# Advances one heroine's existing movement, ability and attack timing. Online
+# host simulation supplies each player's own movement instead of local input.
+func advance_hero_frame(delta: float, supplied_move := Vector2.INF) -> Dictionary:
+	run_time += delta
+	pocket.tick(delta)
+	armory.tick(self, delta)
+	upgrades.tick(delta)
+	var recovery_delta = delta * (RunItems.TONIC_RECOVERY if pocket.haste > 0.0 else 1.0)
+	attack_time -= recovery_delta
+	if attack_pointer != NO_ATTACK_POINTER:
+		attack_held_for = minf(CHARGE_TIME, attack_held_for + delta)
+	if bow_release >= 0.0 and (room_arrival <= 0.0 or not entrance_boss()) and attack_time <= 0.0 \
+			and lily_repeat.is_empty() and not abilities.locks_movement() and not ultimates.locks_movement():
+		var released := bow_release
+		bow_release = -1.0
+		act("attack", released)
+	lily_combo_time = maxf(0.0, lily_combo_time - delta)
+	if lily_combo_time <= 0.0:
+		lily_combo = 0
+	dodge_time -= recovery_delta
+	feather_crown_left = maxf(0.0, feather_crown_left - delta)
+	brasswing_pin_left = maxf(0.0, brasswing_pin_left - delta)
+	velvet_ribbon_left = maxf(0.0, velvet_ribbon_left - delta)
+	if hero == GuestRoster.MINA:
+		skill_time -= delta
+	else:
+		skill_time -= recovery_delta * (2.25 if ultimates.valkyrie_active() else 1.0)
+	mercy -= delta
+	flash -= delta
+	var move = supplied_move.limit_length() if supplied_move.is_finite() else (stick + Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")).limit_length()
+	if hero == GuestRoster.MINA:
+		move = guest_combat.mina_movement(move, visual_clock)
+	var before = player
+	var dodging: bool = dash_remaining > 0.0
+	if dodging:
+		if hero == GuestRoster.LUNA and luna_combat.in_wolf():
+			var step := minf(minf(delta, dash_remaining), luna_combat.wolf_left)
+			player = ForgottenEncounters.clear_endpoint(self, player, dash_vector.normalized(), dash_vector.length() * step, BARREL_CLEARANCE)
+			luna_combat.sweep_dash(self, before, player)
+		else:
+			player = slide_with_cover(player, dash_vector * minf(delta, dash_remaining))
+		talents.add_dash_step(self, before, player)
+		dash_remaining = maxf(0.0, dash_remaining - delta)
+	elif move.length() > 0.1 and not abilities.locks_movement() and not ultimates.locks_movement():
+		facing = move.normalized()
+		var haste_scale = RunItems.TONIC_MOVEMENT if pocket.haste > 0.0 else 1.0
+		var movement_scale := minf(ground_hazards.movement_scale(), combat_status.hero_movement_scale())
+		var walk_speed := float([143.0, 167.0, 302.0, 151.0, 175.0, 162.0, 166.0, 169.0][hero]) * upgrades.movement_factor() * curses.movement_factor()
+		if hero == GuestRoster.LUNA and luna_combat.in_wolf():
+			walk_speed *= LunaCombat.FRENZY_SPEED_SCALE
+		elif ultimates.mina_spinning():
+			walk_speed *= 0.86
+		elif hero == 3 and attack_pointer != NO_ATTACK_POINTER:
+			walk_speed *= 0.80
+		if hero == GuestRoster.MINA and guest_combat.rage_left > 0.0:
+			walk_speed *= GuestCombat.RAGE_MOVE_SPEED
+		if feather_crown_left > 0.0:
+			walk_speed *= 1.15
+		if velvet_ribbon_left > 0.0:
+			walk_speed *= 1.15
+		if hero == 3:
+			walk_speed *= 1.05 * (1.1 if relics.has_relic(Relics.CAMELLIA_RIBBON) else 1.0)
+		player = slide_with_cover(player, move * walk_speed * haste_scale * movement_scale * delta)
+	painted_evolution.tick(self, before, delta)
+	abilities.tick(self, delta, false)
+	ultimates.tick(self, delta, before)
+	if hero == GuestRoster.LUNA:
+		luna_combat.tick(self, delta)
+	elif GuestRoster.is_guest(hero):
+		guest_combat.tick(self, delta)
+	walk_distance = fposmod(walk_distance + player.distance_to(before), 64.0)
+	tick_lily_repeat(delta)
+	visual_velocity = visual_velocity.lerp((player - before) / maxf(delta, 0.001), minf(12.0 * delta, 1.0))
+	damage_flash = maxf(0.0, damage_flash - delta)
+	room_arrival = maxf(0.0, room_arrival - delta)
+	return {"before": before, "dodging": dodging, "move": move}
 
 func step_dungeon_room(delta: float, move: Vector2) -> bool:
 	if room_complete:
@@ -2033,23 +2826,35 @@ func step_pin_arrow(bolt: Dictionary, start: Vector2, delta: float) -> bool:
 		return true
 	return float(bolt.life) <= 0.0
 
+func foe_target_id(foe: Dictionary) -> int:
+	if not foe.has("relic_target_id"):
+		relic_foe_serial += 1
+		foe.relic_target_id = relic_foe_serial
+	return int(foe.relic_target_id)
+
 func resolve_hero_bolt(bolt: Dictionary, start: Vector2, finish: Vector2) -> bool:
 	var remaining = int(bolt.get("remaining_hits", 1))
 	var hit_foes: Array = bolt.get("hit_foes", [])
 	if bolt.has("remaining_hits"):
 		for foe: Dictionary in foes:
-			if not foe.has("relic_target_id"):
-				relic_foe_serial += 1
-				foe.relic_target_id = relic_foe_serial
+			foe_target_id(foe)
 	for hit_index in range(remaining):
 		var hit = closest_bolt_target(bolt, start, finish, hit_foes)
 		if hit.is_empty():
 			break
 		var id := str(bolt.get("weapon_id", ""))
-		var reduced := id == "hollowglass_bow" and remaining == 1
-		strike(hit, false, id, int(bolt.get("weapon_attack", -1)), 0.65 if reduced else 1.0,
-			bool(bolt.get("lily_repeat", false)))
+		var reduced := id in ["hollowglass_bow", "graveglass_pistol"] and remaining == 1
+		var power := lerpf(1.0, 1.58, float(bolt.get("charge", 0.0)))
 		if reduced:
+			power *= 0.50 if id == "graveglass_pistol" else 0.65
+		var pistol := int(bolt.get("hero_projectile", -1)) == GuestRoster.LUNA
+		var shot_bonus := luna_combat.shot_bonus(self, bolt, target(hit)) if pistol else 0
+		var previous_hp := int(hit.hp)
+		strike(hit, false, id, int(bolt.get("weapon_attack", -1)), power,
+			bool(bolt.get("lily_repeat", false)), -1, shot_bonus)
+		if pistol and int(hit.hp) < previous_hp:
+			luna_combat.pistol_hit(self, bolt)
+		if reduced and id == "hollowglass_bow":
 			armory.add_trace("spark", target(hit), target(hit), Color("#cdbaf7"))
 		remaining -= 1
 		if remaining == 0:
@@ -2072,7 +2877,7 @@ func closest_bolt_target(bolt: Dictionary, start: Vector2, finish: Vector2, hit_
 		if int(foe.hp) <= 0 or int(foe.get("relic_target_id", 0)) in hit_foes:
 			continue
 		var point = target(foe)
-		var reach = (28.0 if foe.boss else 18.0) + spread
+		var reach = (28.0 if foe.boss else 18.0) + spread + float(bolt.get("charge", 0.0)) * 10.0
 		if ForgottenEncounters.segment_gap(point, start, finish) > reach:
 			continue
 		var distance = (point - start).dot(direction)
@@ -2081,8 +2886,21 @@ func closest_bolt_target(bolt: Dictionary, start: Vector2, finish: Vector2, hit_
 			closest = foe
 	return closest
 
-func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Dictionary = {}) -> void:
-	if amount <= 0 or hp <= 0 or ultimates.cue_time > 0.0 or endless.protected_at(player):
+func parry_hero_attack(source: Vector2 = Vector2.INF, damage := 0, projectile: Dictionary = {}) -> bool:
+	return abilities.guard_remaining() > 0.0 and hp > 0 and ultimates.cue_time <= 0.0 \
+		and not endless.protected_at(player) and abilities.try_parry(self, source, damage, projectile)
+
+func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Dictionary = {},
+		knockback := Vector2.ZERO) -> void:
+	if amount <= 0 or hp <= 0 or ultimates.cue_time > 0.0:
+		return
+	amount = maxi(1, roundi(amount * _encounter_damage_scale))
+	amount = curses.incoming_damage(amount)
+	if parry_hero_attack(source, amount, projectile):
+		return
+	if not knockback.is_zero_approx() and not ultimates.valkyrie_active():
+		player = slide_with_cover(player, knockback)
+	if endless.protected_at(player):
 		return
 	if mercy > 0.0:
 		if dash_remaining > 0.0 and not dash_evaded and relics.has_relic(Relics.GLASS_EYELASH):
@@ -2090,12 +2908,7 @@ func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Diction
 			relics.on_perfect_dodge()
 			checkpoint.call_deferred()
 		return
-	amount = maxi(1, roundi(amount * _encounter_damage_scale))
-	amount = curses.incoming_damage(amount)
-	var damage = abilities.damage_after_guard(self, amount, source, projectile)
-	if damage < amount:
-		sound.play("guard")
-	damage = ultimates.damage_after_aura(damage)
+	var damage = ultimates.damage_after_aura(amount)
 	damage = armory.reduce_hit(damage)
 	if damage <= 0:
 		return
@@ -2118,7 +2931,7 @@ func damage_hero(amount: int, source: Vector2 = Vector2.INF, projectile: Diction
 		resource = maxi(0, resource - 2)
 
 func apply_damage_relics() -> void:
-	if not second_chance_used and relics.has_relic(Relics.SECOND_CHANCE_DIAL):
+	if hero != 1 and not second_chance_used and relics.has_relic(Relics.SECOND_CHANCE_DIAL):
 		second_chance_used = true
 		dodge_time = maxf(0.0, float(dodge_time) - 0.6)
 	if not velvet_ribbon_used and relics.has_relic(Relics.VELVET_RIBBON) and not foes.is_empty():
@@ -2126,12 +2939,11 @@ func apply_damage_relics() -> void:
 		velvet_ribbon_left = 2.0
 
 func damage_hero_from_status(amount: int) -> void:
-	if amount <= 0 or hp <= 0 or mercy > 0.0 or room_arrival > 0.0 or room_complete \
+	if amount <= 0 or hp <= 0 or room_arrival > 0.0 or room_complete \
 			or pending_chest or foes.is_empty() or ultimates.cue_time > 0.0 or endless.protected_at(player):
 		return
 	amount = curses.incoming_damage(amount)
-	if abilities.damage_after_guard(self, amount, Vector2.INF) == 0:
-		sound.play("guard")
+	if parry_hero_attack(Vector2.INF, amount) or mercy > 0.0:
 		return
 	var relic_floor = floor_index if floor_index >= 0 else depth >> 2
 	var result = relics.resolve_damage(hp, amount, relic_floor)
@@ -2144,6 +2956,9 @@ func damage_hero_from_status(amount: int) -> void:
 	if result.prevented:
 		mercy = maxf(mercy, result.grace)
 		checkpoint.call_deferred()
+
+func entrance_boss() -> bool:
+	return foes.any(func(foe): return bool(foe.boss) and int(foe.hp) > 0)
 
 func update_foes(delta: float, arriving := false) -> void:
 	if not arriving and optional_arena_boss() == OptionalBosses.BRASSWING and not foes.is_empty():
@@ -2162,66 +2977,75 @@ func update_foes(delta: float, arriving := false) -> void:
 			continue
 		if arriving:
 			continue
-		var pos = target(foe)
-		foe.flash = maxf(0.0, float(foe.get("flash", 0.0)) - delta)
-		if HeroAbilities.consume_stun(foe, delta):
-			combat_status.tick_foe(self, foe, delta, false)
-			continue
-		var previous_phase := int(foe.phase)
-		var foot_scale := 1.0
-		if previous_phase == ForgottenEncounters.APPROACH:
-			foot_scale = minf(CombatStatuses.foe_movement_scale(foe), talents.foe_movement_scale(self, foe))
-		if foot_scale <= 0.0:
-			combat_status.tick_foe(self, foe, delta, false)
-			continue
-		foe.clock -= delta
-		if active_biome < ENCOUNTERS_BY_BIOME.size() and foe.has("kind"):
-			if not foe.has("biome"):
-				foe.biome = active_biome
-			var projectile_start := bolts.size()
-			_encounter_damage_scale = clampf(float(foe.get("enemy_power", 1.0)), 1.0, 1.65)
-			if foe.has("optional_boss"):
-				OptionalBosses.advance(self, foe, delta)
-			else:
-				ENCOUNTERS_BY_BIOME[active_biome].advance(self, foe, endless.move_delta(foe, delta) * foot_scale)
-			pace_elite_windup(foe, previous_phase)
-			if not foe.has("optional_boss"):
-				pace_boss_phase(foe, previous_phase)
-			for projectile_index in range(projectile_start, bolts.size()):
-				if bolts[projectile_index].has("damage"):
-					bolts[projectile_index].enemy_power = _encounter_damage_scale
-			_encounter_damage_scale = 1.0
-			if previous_phase != ForgottenEncounters.WINDUP and int(foe.phase) == ForgottenEncounters.WINDUP:
-				sound.play("warning_boss" if bool(foe.boss) else "warning")
-			elif previous_phase == ForgottenEncounters.WINDUP and int(foe.phase) >= ForgottenEncounters.LUNGE:
-				sound.enemy_release(str(foe.get("move", "")))
-			tick_foe_status(foe, pos, previous_phase, delta)
-			continue
-		var radius = danger_radius(foe)
-		if foe.phase == 0:
-			if pos.distance_to(player) > radius * 0.7:
-				var step = (player - pos).normalized() * (46 + mini(depth, 25)) * delta * foot_scale
-				var moved = slide_with_cover(pos, step)
-				if moved.distance_to(pos) < step.length() * 0.35:
-					moved = slide_with_cover(pos, step.rotated(PI * 0.5))
-				pos = moved
-				foe.x = pos.x
-				foe.y = pos.y
-			elif foe.clock <= 0:
-				foe.phase = 1
-				foe.clock = 0.72
-				foe.tx = player.x
-				foe.ty = player.y
-		elif foe.phase == 1 and foe.clock <= 0:
-			if player.distance_to(Vector2(foe.tx, foe.ty)) <= radius:
-				damage_hero((14 if foe.boss else 8) + mini(depth / 4, 8), pos)
-			foe.phase = 0
-			foe.clock = 0.85
-			if foe.boss:
-				foe.clock = boss_recovery(foe, float(foe.clock))
+		advance_one_foe(foe, delta)
+
+# Advance one enemy using the chosen heroine as its target.
+func advance_one_foe(foe: Dictionary, delta: float) -> void:
+	var pos = target(foe)
+	foe.flash = maxf(0.0, float(foe.get("flash", 0.0)) - delta)
+	if HeroAbilities.consume_stun(foe, delta) and int(foe.get("bloomheart_phase", -1)) < 3:
+		combat_status.tick_foe(self, foe, delta, false)
+		return
+	var previous_phase := int(foe.phase)
+	var foot_scale := 1.0
+	if previous_phase == ForgottenEncounters.APPROACH:
+		foot_scale = minf(CombatStatuses.foe_movement_scale(foe), talents.foe_movement_scale(self, foe))
+	if foot_scale <= 0.0:
+		combat_status.tick_foe(self, foe, delta, false)
+		return
+	if BossMobility.tick(self, foe, delta, foot_scale):
+		tick_foe_status(foe, pos, previous_phase, delta)
+		return
+	foe.clock -= delta
+	if active_biome < ENCOUNTERS_BY_BIOME.size() and foe.has("kind"):
+		if not foe.has("biome"):
+			foe.biome = active_biome
+		var projectile_start := bolts.size()
+		_encounter_damage_scale = clampf(float(foe.get("enemy_power", 1.0)), 1.0, 1.65)
+		if foe.has("optional_boss"):
+			OptionalBosses.advance(self, foe, delta)
+		else:
+			var pace := 1.0
+			if foe.boss and previous_phase == ForgottenEncounters.APPROACH:
+				pace = 1.19 if BossMobility.is_ranged(foe) else 1.48
+			ENCOUNTERS_BY_BIOME[active_biome].advance(self, foe, endless.move_delta(foe, delta) * foot_scale * pace)
 		pace_elite_windup(foe, previous_phase)
 		pace_boss_phase(foe, previous_phase)
+		for projectile_index in range(projectile_start, bolts.size()):
+			if bolts[projectile_index].has("damage"):
+				bolts[projectile_index].enemy_power = _encounter_damage_scale
+		_encounter_damage_scale = 1.0
+		if previous_phase != ForgottenEncounters.WINDUP and int(foe.phase) == ForgottenEncounters.WINDUP:
+			sound.play("warning_boss" if bool(foe.boss) else "warning")
+		elif previous_phase == ForgottenEncounters.WINDUP and int(foe.phase) >= ForgottenEncounters.LUNGE:
+			sound.enemy_release(str(foe.get("move", "")))
 		tick_foe_status(foe, pos, previous_phase, delta)
+		return
+	var radius = danger_radius(foe)
+	if foe.phase == 0:
+		if pos.distance_to(player) > radius * 0.7:
+			var step = (player - pos).normalized() * (46 + mini(depth, 25)) * delta * foot_scale
+			var moved = slide_with_cover(pos, step)
+			if moved.distance_to(pos) < step.length() * 0.35:
+				moved = slide_with_cover(pos, step.rotated(PI * 0.5))
+			pos = moved
+			foe.x = pos.x
+			foe.y = pos.y
+		elif foe.clock <= 0:
+			foe.phase = 1
+			foe.clock = 0.72
+			foe.tx = player.x
+			foe.ty = player.y
+	elif foe.phase == 1 and foe.clock <= 0:
+		if player.distance_to(Vector2(foe.tx, foe.ty)) <= radius:
+			damage_hero((14 if foe.boss else 8) + mini(depth / 4, 8), pos)
+		foe.phase = 0
+		foe.clock = 0.85
+		if foe.boss:
+			foe.clock = boss_recovery(foe, float(foe.clock))
+	pace_elite_windup(foe, previous_phase)
+	pace_boss_phase(foe, previous_phase)
+	tick_foe_status(foe, pos, previous_phase, delta)
 
 func collect_elite_heals() -> void:
 	for index in range(elite_heal_drops.size() - 1, -1, -1):
@@ -2246,12 +3070,15 @@ static func pace_boss_phase(foe: Dictionary, previous_phase: int) -> void:
 	var phase := int(foe.phase)
 	if not foe.boss or previous_phase == phase:
 		return
+	if foe.has("optional_boss") and phase == ForgottenEncounters.RECOVERY and float(foe.clock) == 1.35:
+		return
 	var authored := float(foe.clock)
 	var move := str(foe.get("move", ""))
 	if phase == ForgottenEncounters.WINDUP:
 		var warning_minimum := 0.66
 		match move:
-			"petal_gates": warning_minimum = 1.02
+			"petal_gates", "bloom_rite": warning_minimum = 1.02
+			"thorn_wheel": warning_minimum = 0.88
 			"sequence", "gravity", "constellation": warning_minimum = 0.85
 			"echo", "curtain", "falling_stars", "steam": warning_minimum = 0.78
 		foe.clock = maxf(minf(authored, warning_minimum), authored * (1.0 - 0.21 * boss_haste(foe)))
@@ -2262,7 +3089,7 @@ static func pace_boss_phase(foe: Dictionary, previous_phase: int) -> void:
 			foe.clock = boss_recovery(foe, authored)
 
 static func boss_recovery(foe: Dictionary, authored: float) -> float:
-	return maxf(minf(authored, 0.58), authored * (1.0 - 0.38 * boss_haste(foe)))
+	return maxf(minf(authored, 0.58), authored * (0.92 - 0.39 * boss_haste(foe)))
 
 static func boss_haste(foe: Dictionary) -> float:
 	var missing_hp := 1.0 - float(foe.hp) / maxf(1.0, float(foe.max))
@@ -2282,7 +3109,12 @@ func danger_radius(foe: Dictionary) -> float:
 	return 76.0 if foe.hp * 2 < foe.max else 54.0
 
 func _draw() -> void:
-	if screen in ["fight", "room_choice"]:
+	if screen == "online_wait":
+		draw_rect(View.CANVAS, Color("#211a2e"))
+		View.frame(self, Rect2(222, 135, 420, 120), Color("#30253c"))
+		View.centered(self, Rect2(235, 157, 394, 35), "Gathering the Garden…", 25, View.CREAM, true)
+		View.centered(self, Rect2(235, 195, 394, 25), "Connecting your party", 15, View.DIM, true)
+	elif screen in ["fight", "room_choice"]:
 		var in_endless = floor_index >= Dungeon.BIOME_COUNT if floor_index >= 0 else depth >= 28
 		View.hud(self, 7 if in_endless else active_biome)
 		RouteView.draw_world_ui(self)
@@ -2294,7 +3126,10 @@ func _draw() -> void:
 		View.Reward.draw_confirmation(self)
 		RouteView.draw_choice(self)
 		if screen == "fight":
+			View.boss_cutin(self)
 			View.ultimate_cutin(self)
+		if is_instance_valid(online_peer):
+			draw_online_status()
 	elif screen == "garden_hub":
 		Hub.draw(self)
 	elif screen == "seed_shop":
@@ -2365,6 +3200,8 @@ func draw_world() -> void:
 	View.draw_aim_preview(self)
 	abilities.draw_effects(self)
 	ultimates.draw_effects(self)
+	if is_instance_valid(online_peer):
+		draw_online_effects()
 	combat_status.draw(self)
 	talents.draw(self)
 	for foe in foes:
@@ -2378,6 +3215,15 @@ func draw_world() -> void:
 			ENCOUNTERS_BY_BIOME[biome].attack_effect(self, foe)
 	var actors: Array = foes.duplicate()
 	actors.append({"y": player.y, "hero_actor": true})
+	if is_instance_valid(online_peer):
+		for member_id: String in online_members:
+			if member_id == online_peer.player_id:
+				continue
+			var member: Dictionary = online_members[member_id]
+			if member.get("departed", false):
+				continue
+			var position: Vector2 = member.get("position", Vector2.ZERO)
+			actors.append({"y": position.y, "online_actor": member_id})
 	if boss_victory.left > 0.0:
 		actors.append({"y": boss_victory.spot.y, "falling_boss": true})
 	for index in range(barrels.size()):
@@ -2390,7 +3236,10 @@ func draw_world() -> void:
 	actors.sort_custom(func(a, b): return a.y < b.y)
 	for actor in actors:
 		if actor.has("hero_actor"):
-			draw_hero()
+			if not online_spectating:
+				draw_hero()
+		elif actor.has("online_actor"):
+			draw_online_hero(str(actor.online_actor))
 		elif actor.has("falling_boss"):
 			var defeat_pose := 6 if boss_victory.left > BossVictory.LANDING else 7
 			if not OptionalBosses.draw_pose(world_canvas, optional_arena_boss(), defeat_pose, boss_victory.spot + Vector2(0, 13)):
@@ -2413,6 +3262,10 @@ func draw_world() -> void:
 			HeroUltimates.draw_bolt(world_canvas, bolt, pos, direction)
 		elif bolt.get("weapon_id", "") == ElegyMagic.WEAPON:
 			ElegyMagic.draw_bolt(world_canvas, pos, direction, visual_clock)
+		elif float(bolt.get("charge", 0.0)) > 0.0:
+			HeroCombatVisuals.charged_arrow(world_canvas, pos, direction, float(bolt.charge))
+		elif int(bolt.get("hero_projectile", -1)) == GuestRoster.LUNA:
+			LunaCombat.draw_projectile(world_canvas, pos, direction)
 		elif bolt.has("hero_projectile"):
 			if not WeaponArt.draw_projectile(world_canvas, str(bolt.get("weapon_id", "")), pos, direction, visual_clock):
 				HeroCombatVisuals.projectile(world_canvas, int(bolt.hero_projectile), pos, direction, visual_clock)
@@ -2423,10 +3276,178 @@ func draw_world() -> void:
 			EnemyAttackArt.bolt(world_canvas, bolt, pos, direction, active_biome, visual_clock)
 		if bolt.get("lily_repeat", false):
 			HeroCombatVisuals.repeat_projectile(world_canvas, pos, direction)
-		else:
+		elif int(bolt.get("hero_projectile", -1)) != GuestRoster.LUNA:
 			var tint: Color = COLORS[hero].lightened(0.22)
 			world_canvas.draw_line(pos - direction * 13.0, pos, Color(tint, 0.46), 4, true)
 			world_canvas.draw_circle(pos, 3.8, tint, true, -1.0, true)
+
+# Authority simulations are silent; reproduce confirmed combat cues on each phone.
+func play_online_feedback(members: Dictionary, states: Dictionary) -> void:
+	for id: String in states:
+		if not online_heroes.has(id) or not members.has(id):
+			continue
+		var previous: Dictionary = online_heroes[id]
+		var current: Dictionary = states[id]
+		var index := clampi(int(members[id].get("hero", 0)), 0, NAMES.size() - 1)
+		if id == str(online_peer.player_id):
+			var old_victory: float = float(previous.get("boss_victory", {}).get("left", 0.0))
+			var new_victory: float = float(current.get("boss_victory", {}).get("left", 0.0))
+			if old_victory <= 0.0 and new_victory > 0.0:
+				sound.play("boss_break")
+			elif old_victory > BossVictory.DURATION - BossVictory.LANDING and new_victory > 0.0 and new_victory <= BossVictory.DURATION - BossVictory.LANDING:
+				sound.play(BossVictory.FALL_CUES[clampi(active_biome, 0, BossVictory.FALL_CUES.size() - 1)])
+				sound.play("boss_triumph")
+		var old_ultimate: Dictionary = previous.get("ultimates", {})
+		var new_ultimate: Dictionary = current.get("ultimates", {})
+		if float(new_ultimate.get("cue_time", 0.0)) > float(old_ultimate.get("cue_time", 0.0)) + 0.08:
+			sound.hero_ultimate(index)
+		var old_skill: Dictionary = previous.get("abilities", {})
+		var new_skill: Dictionary = current.get("abilities", {})
+		if int(new_skill.get("serial", 0)) > int(old_skill.get("serial", 0)):
+			sound.hero_attack(index, true)
+		var old_attack := float(previous.get("attack_time", 0.0))
+		var new_attack := float(current.get("attack_time", 0.0))
+		if new_attack > old_attack + 0.035:
+			if index == GuestRoster.LUNA:
+				var wolf := float(current.get("luna_combat", {}).get("wolf_left", 0.0)) > 0.0
+				sound.play("luna_claw" if wolf else "luna_pistol")
+			else:
+				sound.hero_attack(index)
+		if float(current.get("dodge_time", 0.0)) > float(previous.get("dodge_time", 0.0)) + 0.1:
+			sound.play("luna_dodge" if index == GuestRoster.LUNA else "dodge")
+		if id == str(online_peer.player_id) and online_members.has(id) and int(members[id].get("hp", 0)) < int(online_members[id].get("hp", 0)):
+			sound.play("hurt")
+
+# Draw each ally's authored ability state at its own location. Cut-ins remain local.
+func draw_online_effects() -> void:
+	var original_player: Vector2 = player
+	var original_hero: int = hero
+	var original_relics = relics
+	for id: String in online_members:
+		if id == str(online_peer.player_id):
+			continue
+		var member: Dictionary = online_members[id]
+		if not bool(member.get("alive", true)) or not bool(member.get("connected", true)):
+			continue
+		var state: Dictionary = online_heroes.get(id, {})
+		if state.is_empty():
+			continue
+		if not online_effects.has(id):
+			online_effects[id] = {"abilities": HeroAbilities.new(), "ultimates": HeroUltimates.new(), "relics": Relics.new(), "thread": SnareThread.new()}
+		var effects: Dictionary = online_effects[id]
+		player = member.get("position", Vector2.ZERO)
+		hero = clampi(int(member.get("hero", 0)), 0, NAMES.size() - 1)
+		relics = effects.relics
+		relics.restore(state.get("relics", {}))
+		effects.abilities.restore(state.get("abilities", {}))
+		effects.ultimates.restore(state.get("ultimates", {}))
+		effects.thread.restore(state.get("snare_thread", {}))
+		effects.abilities.draw_effects(self)
+		effects.ultimates.draw_effects(self)
+		effects.thread.draw(self)
+	player = original_player
+	hero = original_hero
+	relics = original_relics
+
+func online_revive_candidates() -> Array[String]:
+	var result: Array[String] = []
+	if not is_instance_valid(online_peer) or run_paused:
+		return result
+	var campaign: Dictionary = online_frame.get("campaign", {})
+	# An encounter is cleared as soon as its enemies are gone. Friends do not
+	# have to close their personal reward screens before reviving a spectator.
+	if not online_party_clear and (not foes.is_empty() or str(campaign.get("room_phase", "")) != "choices"):
+		return result
+	var own: Dictionary = online_members.get(str(online_peer.player_id), {})
+	if not own.get("alive", false) or not own.get("connected", false) or int(own.get("revives", 0)) <= 0:
+		return result
+	for id: String in online_members:
+		var member: Dictionary = online_members[id]
+		if id != online_peer.player_id and not member.get("alive", true) and member.get("connected", false) and not member.get("departed", false):
+			result.append(id)
+	return result
+
+func online_revive_rect(index: int) -> Rect2:
+	return Rect2(337, 125 + index * 34, 190, 29)
+
+func online_revive_tap(pos: Vector2) -> bool:
+	var targets := online_revive_candidates()
+	for index in range(targets.size()):
+		if online_revive_rect(index).has_point(pos):
+			online_peer.session.request_revive(targets[index])
+			return true
+	return false
+
+func draw_online_status() -> void:
+	var revive_targets := online_revive_candidates()
+	for index in range(revive_targets.size()):
+		var name := str(online_names.get(revive_targets[index], "friend"))
+		View.button(self, online_revive_rect(index), "Revive " + name, true)
+	if online_spectating:
+		View.frame(self, Rect2(304, 49, 256, 33), Color(0.12, 0.08, 0.16, 0.94))
+		View.centered(self, Rect2(310, 52, 244, 27), "Spectating · awaiting revival", 13, View.CREAM, true)
+	if not online_transfer_notice.is_empty():
+		View.frame(self, Rect2(284, 83, 296, 40), Color(0.12, 0.08, 0.16, 0.95))
+		View.centered(self, Rect2(291, 88, 282, 30), online_transfer_notice, 15, View.CREAM, true)
+	if room_complete and not online_party_clear:
+		View.frame(self, Rect2(304, 49, 256, 33), Color(0.12, 0.08, 0.16, 0.94))
+		View.centered(self, Rect2(310, 52, 244, 27), "Waiting for your friends…", 13, View.CREAM, true)
+	if online_party_clear:
+		var living := 0
+		for member: Dictionary in online_members.values():
+			if member.get("alive", false) and not member.get("departed", false):
+				living += 1
+		for door_id: String in room_exits:
+			var votes := 0
+			for member: Dictionary in online_members.values():
+				if member.get("alive", false) and member.get("connected", false) and str(member.get("door", "")) == door_id:
+					votes += 1
+			var point: Vector2 = room_exits[door_id]
+			View.centered(self, Rect2(point.x - 48, point.y + 7, 96, 18), "%d/%d ready" % [votes, living], 10, View.CREAM)
+
+func draw_online_hero(member_id: String) -> void:
+	if not online_members.has(member_id):
+		return
+	var member: Dictionary = online_members[member_id]
+	var point: Vector2 = member.get("position", Vector2.ZERO)
+	var track: Dictionary = online_positions.get(member_id, {})
+	if not track.is_empty():
+		var alpha := clampf((visual_clock - float(track.get("time", visual_clock))) / 0.20, 0.0, 1.0)
+		point = (track.get("from", point) as Vector2).lerp(track.get("to", point), alpha).round()
+	if not bool(member.get("alive", true)) or not bool(member.get("connected", true)):
+		var tint := Color("#e7c5ed") if not member.get("connected", true) else Color("#c8b7c9")
+		world_canvas.draw_circle(point, 9.0 + sin(visual_clock * 2.0) * 1.0, Color(tint, 0.30))
+		world_canvas.draw_circle(point, 5.0, tint)
+	else:
+		var index := clampi(int(member.get("hero", 0)), 0, NAMES.size() - 1)
+		var details: Dictionary = online_heroes.get(member_id, {})
+		var pose: Dictionary = details.get("presentation", {})
+		var dir: Variant = pose.get("facing", Vector2.DOWN)
+		var direction: Vector2 = dir if dir is Vector2 else Vector2.DOWN
+		var attack_direction: Vector2 = pose.get("attack_facing", direction)
+		var feet := point.round() + Vector2(0, 11)
+		var movement := bool(track.get("moving", false))
+		var distance := float(pose.get("walk_distance", visual_clock * 100.0))
+		var action_left := float(pose.get("guest_action_left", 0.0))
+		var attack_flash := float(pose.get("flash", 0.0))
+		Art.shadow(world_canvas, feet, 15.0)
+		if index == GuestRoster.LUNA:
+			var wolf := bool(pose.get("luna_wolf", false))
+			var luna_action := float(pose.get("luna_action_left", 0.0))
+			if luna_action > 0.0:
+				LunaArt.action(world_canvas, feet, 49.0 if wolf else 58.0, attack_direction, luna_action, Color.WHITE, wolf)
+			else:
+				LunaArt.walk(world_canvas, feet, 49.0 if wolf else 58.0, distance, direction, movement, Color.WHITE, wolf)
+		elif GuestRoster.is_guest(index) and action_left > 0.0:
+			GuestArt.action(world_canvas, index, feet, 53.0, attack_direction, int(pose.get("guest_action_variant", 0)), action_left, Color.WHITE)
+		elif not GuestRoster.is_guest(index) and attack_flash > 0.0:
+			var phase := clampf(1.0 - attack_flash / SWING_DURATION, 0.0, 1.0)
+			HeroCombatVisuals.action_body(world_canvas, index, feet, 53.0, attack_direction, phase, false, Color.WHITE)
+			HeroCombatVisuals.basic(world_canvas, index, point, attack_direction, phase, false, false, 0)
+		else:
+			Art.walk(world_canvas, index, feet, 53.0, distance, direction, movement, Color.WHITE)
+	var username := str(online_names.get(member_id, "Friend"))
+	world_canvas.draw_string(Art.DISPLAY_FONT, point + Vector2(-46, -57), username, HORIZONTAL_ALIGNMENT_CENTER, 92, 11, Color("#f6e2c2"))
 
 func draw_chest() -> void:
 	var feet = chest_position + Vector2(0, 12)
@@ -2442,12 +3463,37 @@ func draw_chest() -> void:
 		var point = chest_position + Vector2(offset.x, offset.y * 0.45 - rise)
 		View.diamond(world_canvas, point, 2.2, Color(1, 0.85, 0.48, 1.0 - rise / 38.0))
 
+func swing_duration() -> float:
+	if hero == 0:
+		var interval: float = [0.24, 0.17, 0.32][angela_attack_stage]
+		return interval * (0.80 if ultimates.valkyrie_active() else 1.0)
+	if hero == 2:
+		return 0.17
+	return SWING_DURATION
+
 func draw_hero() -> void:
 	var ground = player + Vector2(0, 11)
+	if hero == GuestRoster.LUNA:
+		draw_luna(ground)
+		return
+	if GuestRoster.is_guest(hero):
+		var tint := Color.WHITE.lerp(Color(1.25, 0.43, 0.50), damage_flash / 0.2)
+		Art.shadow(world_canvas, ground, 15.0)
+		if ultimates.mina_spinning():
+			GuestArt.action(world_canvas, hero, ground, 53.0, facing, 2, fposmod(visual_clock, 0.27), tint)
+		elif guest_combat.action_until > 0.0:
+			GuestArt.action(world_canvas, hero, ground, 53.0, attack_visual_facing,
+				guest_combat.action_variant, guest_combat.action_until, tint)
+		else:
+			GuestArt.walk(world_canvas, hero, ground, 53.0, walk_distance, facing,
+				visual_velocity.length_squared() > 144.0, tint)
+		guest_combat.draw(self)
+		UpgradeArt.draw_guard(world_canvas, player, upgrades.aegis_flash)
+		return
 	var elevation = abilities.elevation()
 	Art.shadow(world_canvas, ground, 15.0 - elevation * 0.16)
 	var feet = ground - Vector2(0.0, elevation)
-	var attack_phase = clampf(1.0 - flash / SWING_DURATION, 0.0, 1.0)
+	var attack_phase = clampf(1.0 - flash / swing_duration(), 0.0, 1.0)
 	var skill_pose: Dictionary = abilities.action_pose()
 	if dash_remaining > 0:
 		HeroCombatVisuals.step_sweep(world_canvas, player, dash_vector.normalized(), COLORS[hero],
@@ -2460,7 +3506,7 @@ func draw_hero() -> void:
 	var moving = visual_velocity.length_squared() > 144.0
 	if dash_remaining <= 0.0 and flash > 0.0 and attack_phase < 0.85:
 		HeroCombatVisuals.action_body(world_canvas, hero, feet, height, attack_visual_facing,
-			attack_phase, false, tint, 0.0, lily_repeat_visual)
+			attack_phase, false, tint, 0.0, lily_repeat_visual, angela_attack_stage)
 	elif dash_remaining <= 0.0 and not skill_pose.is_empty():
 		HeroCombatVisuals.action_body(world_canvas, hero, feet, height, skill_pose.direction,
 			skill_pose.phase, skill_pose.skill, tint, skill_pose.impact)
@@ -2468,11 +3514,36 @@ func draw_hero() -> void:
 		Art.walk(world_canvas, hero, feet, height, walk_distance, facing, moving, tint)
 	else:
 		Art.heroine(world_canvas, hero, feet, height, visual_clock, visual_velocity,
-			maxf(0.0, flash / SWING_DURATION), tint)
+			maxf(0.0, flash / swing_duration()), tint)
 	if flash > 0:
 		HeroCombatVisuals.basic(world_canvas, hero, player, attack_visual_facing, attack_phase,
-			lily_finisher_flash, lily_repeat_visual)
-		WeaponArt.draw_swing(world_canvas, armory.for_hero(hero), player, attack_visual_facing, attack_phase)
+			lily_finisher_flash, lily_repeat_visual, angela_attack_stage)
+		var sword_phase: float = 1.0 - attack_phase if hero == 0 and angela_attack_stage == 2 else attack_phase
+		if hero != 0 or angela_attack_stage != 1:
+			WeaponArt.draw_swing(world_canvas, armory.for_hero(hero), player, attack_visual_facing, sword_phase)
+	if hero == 3 and attack_pointer != NO_ATTACK_POINTER:
+		HeroCombatVisuals.draw_bow_charge(world_canvas, player, assisted_direction(Weapons.item(armory.for_hero(hero)).aim, true), bow_charge_ratio())
+	UpgradeArt.draw_guard(world_canvas, player, upgrades.aegis_flash)
+
+func draw_luna(ground: Vector2) -> void:
+	var wolf := luna_combat.in_wolf()
+	var tint := Color.WHITE.lerp(Color(1.25, 0.43, 0.50), damage_flash / 0.2)
+	var height := 49.0 if wolf else 58.0
+	Art.shadow(world_canvas, ground, 20.0 if wolf else 15.0)
+	if dash_remaining > 0.0:
+		var direction := dash_vector.normalized()
+		if wolf:
+			LunaArt.action(world_canvas, ground, height, direction, dash_remaining, tint, true, true)
+		else:
+			for index in range(2, 0, -1):
+				var trail := ground - direction * float(index * 13)
+				LunaArt.walk(world_canvas, trail, height, walk_distance, direction, true, Color("#dcb8f0", 0.28 / index))
+			LunaArt.walk(world_canvas, ground, height, walk_distance, direction, true, tint)
+	elif luna_combat.action_left > 0.0:
+		LunaArt.action(world_canvas, ground, height, attack_visual_facing, luna_combat.action_left, tint, wolf)
+	else:
+		LunaArt.walk(world_canvas, ground, height, walk_distance, facing, visual_velocity.length_squared() > 144.0, tint, wolf)
+	luna_combat.draw(self)
 	UpgradeArt.draw_guard(world_canvas, player, upgrades.aegis_flash)
 
 func draw_warning(foe: Dictionary) -> void:
@@ -2508,14 +3579,20 @@ func draw_foe(foe: Dictionary, biome: int) -> void:
 	var pos = target(foe)
 	var radius = 26.0 if foe.boss else (18.0 if foe.get("elite", false) else 14.0)
 	var feet = pos + Vector2(0, radius * 0.51)
-	var visible := smoothstep(0.06, 0.90, 1.0 - room_arrival / ROOM_ARRIVAL)
+	var visible := 1.0
 	if room_arrival > 0.0:
-		var bloom := clampf(1.0 - room_arrival / ROOM_ARRIVAL, 0.0, 1.0)
+		var entry_time := BOSS_ARRIVAL if entrance_boss() else ROOM_ARRIVAL
+		var bloom := clampf(1.0 - room_arrival / entry_time, 0.0, 1.0)
+		visible = smoothstep(0.06, 0.90, bloom)
 		var tint := Color("#f2adbe") if foe.boss else Color("#d6c4db")
 		world_canvas.draw_arc(feet, radius * (0.77 + 0.4 * bloom), 0, TAU, 28,
 			Color(tint, sin(PI * bloom) * 0.85), 1.5, true)
 		feet.y += (1.0 - visible) * 8.0
 	Art.shadow(world_canvas, feet, radius * 0.95 * visible)
+	if foe.boss:
+		var motion := BossMobility.paint(self, foe)
+		feet.y -= motion.x
+		visible *= motion.y
 	if foe.has("optional_boss") and not foe.has("optional_lesson") and OptionalBosses.draw_pose(world_canvas, foe.optional_boss, OptionalBosses.pose(foe, visual_clock), feet, visible):
 		return
 	if biome < Art.ENEMY_ATLASES.size():

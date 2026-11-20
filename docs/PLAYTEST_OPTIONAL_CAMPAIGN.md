@@ -18,7 +18,9 @@ Start a new campaign or reach a fresh floor in an existing campaign. Look for a 
 | Astral Greenhouse · Letter Gallery | The Nebula Librarian | Nebula Index |
 | Bloomheart Core · Banquet Procession | The Empty Sixth Chair | Sixth Seat Trinket |
 
-Relics last for the run and appear in the Relic Ledger. Garden Without End still opens through the Bloomheart Core chapter boss.
+Relics last for the run. Each has its own sprite on its reward card, in inspection, in the Relic Ledger, and under Pause → Relics. On a run with more than seven, use the arrows in the pause list to see the rest. Garden Without End still opens through the Bloomheart Core chapter boss.
+
+The Seed Shop sells all thirteen optional boss themes for 45–72 Garden Seeds per tape. In **Garden → Jukebox**, tap **Hidden Bosses** to find them. Select an unowned tape to jump to its shop offer, then return to the jukebox to play it with the cabinet unlocked.
 
 On the Xiaomi 14T Pro, check touch responsiveness near the left edge, readable warnings while moving, frame pacing when multiple effects overlap, and music level and loops against combat cues. Pause and resume during an attack and after claiming a relic. In an elite room, check elite size, cast speed and the small healing drop. Try a Curse Altar and the updated heroine skills during the same run.
 

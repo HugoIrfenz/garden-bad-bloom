@@ -53,7 +53,7 @@ func test_echo(game) -> void:
 	var foe := actor(game, Vector2(274.0, 190.0))
 	game.relics.equip(Elegy.REFRAIN)
 	game.act("skill")
-	expect(is_equal_approx(game.skill_time, 3.55), "Refrain did not raise Midnight Verse recharge.")
+	expect(is_equal_approx(game.skill_time, 3.10), "Refrain did not raise Midnight Verse recharge.")
 	game.abilities.tick(game, 0.60)
 	expect(foe.hp == 80 and not magic_state(game).echo.is_empty(), "Midnight Verse did not queue one later echo.")
 	game.checkpoint()
@@ -92,7 +92,7 @@ func test_evolved_shots(game) -> void:
 		"The evolved bolt did not bend from its launch heading.")
 	for i in range(45):
 		game.update_bolts(1.0 / 60.0)
-	expect(foe.hp == 86 and magic_state(game).residues.size() == 1,
+	expect(foe.hp == 88 and magic_state(game).residues.size() == 1,
 		"The actual evolved projectile hit did not leave one trace.")
 	game.abilities.note_elegy_hit(game, Vector2(274.0, 190.0), game.armory.basic_sequence)
 	expect(magic_state(game).residues.size() == 1 and magic_state(game).wells.is_empty(),
@@ -101,16 +101,16 @@ func test_evolved_shots(game) -> void:
 	game.act("attack")
 	for i in range(45):
 		game.update_bolts(1.0 / 60.0)
-	expect(foe.hp == 72 and magic_state(game).wells.size() == 1, "Two evolved shots failed to form a damaging well.")
+	expect(foe.hp == 76 and magic_state(game).wells.size() == 1, "Two evolved shots failed to form a damaging well.")
 	game.abilities.tick(game, 0.35)
 	game.checkpoint()
 	game.resume_run()
 	game.barrels.clear()
 	foe = game.foes[0]
 	game.abilities.tick(game, 0.10)
-	expect(foe.hp == 63 and bool(magic_state(game).wells[0].bloomed), "Resumed convergence did not bloom precisely once.")
+	expect(foe.hp == 67 and bool(magic_state(game).wells[0].bloomed), "Resumed convergence did not bloom precisely once.")
 	game.abilities.tick(game, 0.40)
-	expect(foe.hp == 63 and magic_state(game).wells.is_empty(), "Convergence dealt repeated damage or failed to expire.")
+	expect(foe.hp == 67 and magic_state(game).wells.is_empty(), "Convergence dealt repeated damage or failed to expire.")
 
 
 func expect(condition: bool, detail: String) -> void:

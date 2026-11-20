@@ -3,6 +3,7 @@ extends RefCounted
 const Registry = preload("res://scripts/relic_effects.gd")
 const RelicInfo = preload("res://scripts/relic_info_view.gd")
 const RelicSources = preload("res://scripts/relic_sources.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 const Items = preload("res://scripts/run_items.gd")
 const BACKDROP = preload("res://assets/art/menus/run_preparation.png")
 const GEAR = preload("res://assets/art/items/preparation_gear.png")
@@ -28,7 +29,7 @@ static func relic_rect(index: int) -> Rect2:
 	return Rect2(250 + index * 138, 155, 128, 107)
 
 static func relic_options(hero: int) -> Array:
-	var result := RELIC_IDS.duplicate()
+	var result := RELIC_IDS.filter(func(id): return RelicSources.can_offer(id, hero))
 	if hero > 0 and hero < RelicSources.SIGNATURES.size():
 		result.append(RelicSources.SIGNATURES[hero])
 	return result
@@ -110,7 +111,8 @@ static func draw_starting_pocket(game) -> void:
 	if not item.is_empty():
 		Items.draw_icon(game, item, STARTING_POCKET.position + Vector2(24, 20), 25.0, Color.WHITE)
 	view.centered(game, Rect2(213, 338, 220, 18), "Starting Pocket · " + name, 15, view.CREAM, true)
-	view.centered(game, Rect2(213, 357, 220, 13), option.get("effect", "Tap to choose an unlocked item"), 10, view.DIM)
+	var effect: String = "Tap to choose an unlocked item" if item.is_empty() else Items.effect_for(item, game.hero)
+	view.centered(game, Rect2(213, 357, 220, 13), effect, 10, view.DIM)
 	view.centered(game, Rect2(435, 339, 30, 32), "›", 22, view.CREAM, true)
 
 static func draw_hero_panel(game) -> void:
@@ -120,7 +122,8 @@ static func draw_hero_panel(game) -> void:
 	view.frame(game, card, Color(PANEL, 0.85))
 	view.centered(game, Rect2(55, 70, 169, 35), game.NAMES[hero], 24, view.CREAM, true)
 	view.heroine_stage(game, Vector2(139, 258), 149.0)
-	view.centered(game, Rect2(57, 274, 165, 21), view.ROLE[hero], 11, view.DIM)
+	var role: String = "The Wolfbound Gunner" if hero == GuestRoster.LUNA else view.ROLE[hero]
+	view.centered(game, Rect2(57, 274, 165, 21), role, 11, view.DIM)
 	view.centered(game, Rect2(57, 295, 165, 17), "%d HP  ·  %s" % [game.HEALTH[hero], game.RESOURCES[hero]], 12, view.CREAM)
 
 static func draw_weapon(game) -> void:

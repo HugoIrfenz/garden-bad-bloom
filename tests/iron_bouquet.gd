@@ -11,6 +11,9 @@ func expect(passed: bool, issue: String) -> void:
 
 func fixture(game, guard_delay: float = 0.0) -> void:
 	game.barrels.clear()
+	game.boss_victory.reset()
+	game.room_arrival = 0.0
+	game.screen = "fight"
 	game.foes = [{"x": 400, "y": 208, "hp": 80, "max": 80, "kind": 0,
 		"boss": false, "phase": 0, "clock": 0.8}]
 	game.bolts.clear()
@@ -43,11 +46,14 @@ func acquire_locket(game) -> void:
 	game.room_id = game.floor_manifest.boss_id
 	game.enter_room()
 	for relic_id in [game.Relics.WEDDING_RING, game.Relics.GLASS_EYELASH,
-			game.Relics.LAST_TEASPOON, game.Relics.THORNMAIL]:
+			game.Relics.LAST_TEASPOON, game.Relics.HONEST_RECEIPT, game.Relics.THORNMAIL]:
 		game.relics.equip(relic_id)
-	expect(game.relics.boss_offer(1048, 3).is_empty(), "A heroine without Royal Guard was offered Counterclock Locket.")
+	expect(game.relics.boss_offer(1048, 3) != game.Relics.COUNTERCLOCK_LOCKET, "A heroine without Royal Guard was offered Counterclock Locket.")
 	for foe in game.foes:
 		foe.hp = 0
+	game._physics_process(0.016)
+	# Boss deaths now play their authored fall before the reward appears.
+	game._physics_process(2.0)
 	game._physics_process(0.016)
 	expect(game.reward_relic_id == game.Relics.COUNTERCLOCK_LOCKET, "The locket was absent from Angela’s boss reward pool.")
 	game.player = game.chest_position
@@ -105,15 +111,15 @@ func run() -> void:
 	expect(reflected_count(game) == 1,
 		"A perfect melee guard incorrectly consumed the locket’s projectile reflection.")
 
-	fixture(game, 0.22)
+	fixture(game, 0.28)
 	hostile_shot(game)
 	expect(game.hp == 100 and reflected_count(game) == 0, "A late guard must absorb the shot without reflecting it.")
 	fixture(game)
 	hostile_shot(game, false)
-	expect(game.hp == 80 and reflected_count(game) == 0, "A shot from behind was reflected.")
+	expect(game.hp == 100 and reflected_count(game) == 1, "A perfect guard failed to reflect a shot from behind.")
 	fixture(game)
 	hostile_shot(game, true, true)
-	expect(game.hp == 80 and reflected_count(game) == 0, "A stationary hazard was reflected.")
+	expect(game.hp == 100 and reflected_count(game) == 0, "The stationary hazard should be stopped without reflection.")
 
 	fixture(game)
 	game.barrels.append(Vector2(360, 208))
@@ -138,6 +144,28 @@ func run() -> void:
 	game.abilities.tick(game, 0.41)
 	expect(game.foes[0].hp == 69 and game.abilities.snapshot().iron_bouquets.is_empty(),
 		"Counterclock Locket alone did not return a weakened shot without a patch.")
+
+	fixture(game, 0.75)
+	var guarded_position: Vector2 = game.player
+	var attacker := guarded_position + Vector2.LEFT * 34.0
+	game.OptionalBosses.release_brasswing(game, {"optional_attack": 1}, attacker, Vector2.RIGHT)
+	expect(game.player == guarded_position and game.hp == 100,
+		"Brasswing moved Angela or dealt damage through a late guard.")
+
+	game.abilities.reset()
+	game.skill_time = 0.0
+	game.dash_remaining = 0.12
+	game.mercy = 0.12
+	game.press_screen_touch(17, game.touch_position(game.SKILL))
+	expect(game.abilities.guard_remaining() > 0.0, "A skill tap during a dodge did not raise the guard.")
+	game.ground_hazards.patches.assign([{
+		"x": guarded_position.x, "y": guarded_position.y, "kind": "roots",
+		"phase": 2, "left": 0.40, "contact": false,
+	}])
+	game.mercy = 0.0
+	game.ground_hazards.tick(game, guarded_position, 0.016)
+	expect(not game.combat_status.has_hero(game.CombatStatuses.ROOT) and game.skill_time == 5.0,
+		"Root Grapple bypassed the guard or failed to start recharge.")
 
 	for issue in issues:
 		push_error(issue)

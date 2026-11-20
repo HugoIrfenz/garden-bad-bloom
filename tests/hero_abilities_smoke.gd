@@ -34,6 +34,9 @@ class Battle:
 	func player_hit_amount(amount: int) -> int:
 		return amount
 
+	func skill_cooldown() -> float:
+		return Abilities.cooldown_for_game(self)
+
 	func clamp_position(point: Vector2) -> Vector2:
 		return point.clamp(Vector2(20.0, 20.0), Vector2(580.0, 335.0))
 
@@ -75,21 +78,23 @@ func test_royal_guard() -> void:
 	var enemy := game.add_foe(Vector2(112.0, 100.0))
 	expect(ability.cast(game), "Angela could not raise her shield.")
 	expect(is_equal_approx(game.skill_time, 1.0), "An unused shield should recharge in one second.")
-	expect(ability.damage_after_guard(game, 20, Vector2(38.0, 100.0)) == 0, "Angela's shield failed to absorb a rear hit.")
+	expect(ability.try_parry(game, Vector2(38.0, 100.0), 20), "Angela's shield failed to parry a rear hit.")
+	expect(game.resource == 2, "A rear hit in the opening window failed to prime a perfect guard.")
 	expect(is_equal_approx(game.skill_time, 5.0), "The first absorption did not start the five-second recharge.")
 	game.skill_time = 4.75
-	expect(ability.damage_after_guard(game, 20, Vector2.INF) == 0, "Angela's shield failed to absorb a directionless hit.")
-	expect(ability.damage_after_guard(game, 20, Vector2(145.0, 100.0)) == 0, "The perfect window took damage.")
-	expect(ability.damage_after_guard(game, 20, Vector2(139.0, 100.0)) == 0, "A perfect guard failed against a second frontal contact.")
+	expect(ability.try_parry(game, Vector2.INF, 20), "Angela's shield failed to absorb a directionless hit.")
+	expect(ability.try_parry(game, Vector2(145.0, 100.0), 20), "The perfect window took damage.")
+	expect(ability.try_parry(game, Vector2(139.0, 100.0), 20), "A perfect guard failed against a second frontal contact.")
 	expect(game.resource == 2 and is_equal_approx(game.skill_time, 4.75), "Repeated contacts granted extra Resolve or restarted the recharge.")
 	reload_ability(ability)
 	expect(is_equal_approx(ability.guard_recharge(), 5.0), "The longer shield recharge was lost across save.")
 	expect(ability.counter_bonus(game, enemy) == 14, "Perfect guard's counter did not survive the snapshot.")
 	expect(ability.counter_bonus(game, enemy) == 0 and game.resource == 0, "A counter was spent more than once.")
-	ability.tick(game, 0.20)
-	expect(ability.damage_after_guard(game, 20, Vector2(145.0, 100.0)) == 0, "A regular frontal guard leaked damage.")
-	ability.tick(game, 1.00)
-	expect(ability.damage_after_guard(game, 20, Vector2(145.0, 100.0)) == 20, "Angela's guard did not expire.")
+	ability.tick(game, 0.75)
+	expect(ability.try_parry(game, Vector2(145.0, 100.0), 20), "A late guard leaked damage.")
+	expect(game.resource == 0, "A late guard primed another perfect counter.")
+	ability.tick(game, 0.16)
+	expect(not ability.try_parry(game, Vector2(145.0, 100.0), 20), "Angela's guard did not expire.")
 
 func test_midnight_verse() -> void:
 	var game := Battle.new()
@@ -121,6 +126,9 @@ func test_unauthorized_access() -> void:
 	ability.tick(game, 0.13)
 	expect(is_equal_approx(game.player.x, 164.0) and not ability.locks_movement(), "Nixia's landing was inconsistent after save.")
 	expect(foe.hp == 78 and behind.hp == 90 and Abilities.consume_stun(foe, 0.08), "Nixia's leap did not stun its forward cone.")
+	var after_hit: Dictionary = ability.snapshot()
+	expect(game.skill_time == 0.0 and ability.cast(game), "Nixia could not immediately recast after landing a hit.")
+	ability.restore(after_hit)
 	ability.tick(game, 0.19)
 	expect(foe.hp == 60 and behind.hp == 90, "Nixia's follow-up missed or struck a foe behind the landing.")
 	reload_ability(ability)

@@ -126,3 +126,45 @@ Use case: stylized-concept. Asset type: one landscape 3:2 transparent PNG sprite
 
 Curse bargains reuse the illustrated altar and choices background. The lily, red moon, and barred cup glyphs in [RunCurses](../scripts/run_curses.gd) use the same geometry on the altar cards and in the pause sheet, with a slow pulse around each border.
 
+
+## Optional boss relic sprites
+
+The built-in ImageGen tool produced the 1254 × 1254 RGBA atlas at `assets/art/items/optional_boss_relics.png`. The original alpha is preserved. Each relic uses a tightly fitted region of the atlas on its reward card, inspection screen, ledger, and the pause screen.
+
+Use case: stylized-concept.
+Asset type: One square transparent inventory sprite atlas for Garden: Bad Bloom, an original anime garden roguelike.
+Input image: existing Garden: Bad Bloom run-upgrade sprites for visual style and outline/metal finish only.
+Primary request: create the thirteen optional boss relic icons. Match the reference's moody storybook goldwork, warm outlined silhouettes, clean anime shading and controlled fine pixel texture. Make the forms recognizable even at 16–30 px. Slight 3/4 view, high-contrast edge highlights, a restrained flower motif where natural, no chunky pixel blocks.
+Layout: exactly four columns by four rows, regular equal square cells filling the square canvas. Exactly one centered icon per occupied cell. Each icon entirely inside the central 72 percent of its cell, separated with broad transparent gutters. Complete silence in the final three cells. Actual alpha transparency everywhere outside the objects. No frames, floor, labels, lettering, numbers, grid lines, secondary objects, drop shadows, or drifting particles.
+Row 1 (left to right): 1 gold dandelion crown with ivory feather tips and a bright warm yellow flower centerpiece; 2 scarecrow mask charm with two glass button eyes and russet straw stitch; 3 lilac mushroom cap with a short blue gauze veil fixed to it; 4 bulky tawny truffle satchel with a russet mushroom-shaped buckle.
+Row 2 (left to right): 5 gold mechanical bee brooch with sky-blue wings; 6 round bronze pocket clock with one ivory hand and deep teal dial; 7 pale pink bridal lace veil wrapped around a crimson rose and thorn circlet; 8 branching pale deer antler tip strung with a green ribbon and a single tiny brass choir bell.
+Row 3 (left to right): 9 slender sapphire fleur-de-lis noble pin edged in silver; 10 deep burgundy velvet bow with an opal center and compact looped sides; 11 low warm gold and cool silver interlocking crescent pendant; 12 closed indigo book with a prominent cyan star and tabbed page edges.
+Row 4: 13 little gilded empty-chair charm with a garnet cushion, a readable high ornate back and a little keyring loop. Cells two, three, four entirely empty transparent.
+
+
+## Mina and Whi
+
+The built-in ImageGen tool produced three transparent atlases. Save paths are `assets/art/heroines/mina_sprite_atlas.png`, `assets/art/heroines/whi_sprite_atlas.png`, and `assets/art/heroines/guest_defeat.png`. The two character atlases contain directional poses, attack poses, portraits, weapons, and signature relics.
+
+### Mina atlas
+
+Use case: stylized-concept. Make one game-ready transparent square PNG sprite atlas for the original fine-pixel storybook anime roguelike Garden: Bad Bloom. Given user-owned character sheet is for character likeness, palette, outfit, and weapon only. Draw isolated new assets with genuinely transparent RGBA. Use precisely FOUR equal columns by FOUR equal rows. Regular equal square cells across the entire square canvas. Put exactly one sprite in each cell, identifiable at 44–60 gameplay pixels. Keep every sprite inside its own cell with at least 10% transparent padding on all edges. Rows 1 to 3 are full-body, equal height, feet on a consistent baseline, clean anime ink edges and small stepped pixels, not chunky blocks. Floor camera three-quarter top-down just enough to see feet. Shadows, impact effects, and glows will be drawn by the game, so use none. Exclude typography, grid lines, labels, scenery, panels, logos, cast shadows, duplicate sprites in cells, and soft fog.
+The character is Mina, an adult very tiny nekomimi bruiser with off-white long wavy hair, matching fluffy cat ears, crimson eyes, two red bows, black and red gold-trimmed dress, and dark boots. Her giant hammer-axe is blackened steel edged in antique gold with a garnet rose and burgundy ties; carry it close, readable, and contained entirely inside each cell. Keep her exact likeness.
+ROW 1: facing down/front standing ready; front walk with left foot clearly forward; front walk with right foot clearly forward; full profile facing RIGHT standing.
+ROW 2: same RIGHT profile walk left foot forward with the axe behind; same RIGHT profile walk right foot forward with axe balanced; facing away UP with hair and back of dress visible idle; facing away UP walk left foot forward.
+ROW 3: facing away UP walk right foot forward; right-facing two-handed axe low SWEEP key pose; right-facing hammer downward SLAM key pose with bent knees; right-facing full-body turning SPIN pose, weapon close to center so silhouette fits.
+ROW 4: beautiful expressive menu head-and-shoulders Mina portrait in three-quarter view with both cat ears fully intact; upbeat victorious Mina raising the axe in a compact triumphant full-body pose; single isolated matching hammer-axe equipment icon with no hand; single faceted garnet bell with gold claws and a little ruby rose on a clasp (the Temper Bell signature relic).
+
+### Whi atlas
+
+Use case: stylized-concept. Make one game-ready transparent square PNG sprite atlas for the original fine-pixel storybook anime roguelike Garden: Bad Bloom. Given user-owned character sheet is for character likeness, palette, outfit, and weapon only. Draw isolated new assets with genuinely transparent RGBA. Use precisely FOUR equal columns by FOUR equal rows. Regular equal square cells across the entire square canvas. Put exactly one sprite in each cell, identifiable at 44–60 gameplay pixels. Keep every sprite inside its own cell with at least 10% transparent padding on all edges. Rows 1 to 3 are full-body, equal height, feet on a consistent baseline, clean anime ink edges and small stepped pixels, not chunky blocks. Floor camera three-quarter top-down just enough to see feet. Shadows, impact effects, and glows will be drawn by the game, so use none. Exclude typography, grid lines, labels, scenery, panels, logos, cast shadows, duplicate sprites in cells, and soft fog.
+The character is Whi, small adult doll-like mystical caster, long deep purple hair with straight bangs, lilac eyes, off-white veil and small gold flowers, neat purple plaid dress and bow, striped stockings and dark boots. Her small gold trefoil focus has pale violet inlays, purple bow and pearl ties. Keep her exact likeness.
+ROW 1: facing down/front standing ready; front walk with left foot clearly forward; front walk with right foot clearly forward; full profile facing RIGHT standing.
+ROW 2: same RIGHT profile walk left foot forward with arms lightly bent; same RIGHT profile walk right foot forward; facing away UP showing veil, hair and dress idle; facing away UP walk left foot forward.
+ROW 3: facing away UP walk right foot forward; right-facing HOLY pose with outstretched upward palm and pale gold focus, no light rays; right-facing MERCY pose with both hands close to heart and soft green center focus, no halo; right-facing RAY pose with both arms aiming forward and pale lavender center focus, no emitted beam.
+ROW 4: beautiful expressive menu head-and-shoulders Whi portrait in three-quarter view with veil and bow fully intact; cheerful victorious Whi clasping the focus in a compact full-body pose; single isolated matching gold trefoil focus equipment icon with lavender crystals; single isolated opalescent glass prism with a gold trefoil clasp (the Threefold Prism signature relic).
+
+### Defeat portraits
+
+Use case: stylized-concept. Two expressive defeat portraits for the original game Garden: Bad Bloom, matching these two character references precisely in fine-grained pixel-anime rendering. Draw a 2:1 horizontal transparent RGBA atlas with exactly two separate equally spaced adult chibi full-body sprites, one per half with generous transparent padding and no props that extend outside its cell. Left Mina, white wavy hair and cat ears with red bows, black red gold Gothic dress, kneeling leaning unhappily on her massive red and black ornate hammer axe with bow scuffed, exaggerated teary cat eyes and ears drooped, clearly Mina. Right Whi, plum hair, cream veil, purple plaid dress and star accessories, crouching forlornly and holding a tiny darkened version of her gold trefoil focus as if it just went out, oversized sad sparkling eyes, clearly Whi. Endearing funny expressions with no text, no joke lettering, no ground or backgrounds, no graphic injuries, no large chunks of pixels. Warm stepped dark outlines, gently shaded contour, clear silhouettes, true transparency.
+

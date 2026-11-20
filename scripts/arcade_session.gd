@@ -133,8 +133,11 @@ func award_win(game) -> void:
 			if not game.pocket.take("petal_bomb"):
 				game.bonus += 1
 		Catalog.ENCORE:
-			game.petals += 8
-			game.resource = mini(game.HeroUltimates.CHARGE, game.resource + 2)
+			if game.hero == Catalog.GuestRoster.LUNA:
+				game.petals += Catalog.LUNA_ENCORE_PETALS
+			else:
+				game.petals += 8
+				game.resource = mini(game.HeroUltimates.CHARGE, game.resource + 2)
 		Catalog.SNAKE:
 			if not game.pocket.take("petal_bomb"):
 				game.petals += 8

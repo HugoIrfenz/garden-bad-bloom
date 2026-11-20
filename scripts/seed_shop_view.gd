@@ -1,6 +1,9 @@
 extends RefCounted
 
 const Profile = preload("res://scripts/run_profile.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const GuestArt = preload("res://scripts/guest_hero_art.gd")
+const LunaArt = preload("res://scripts/luna_art.gd")
 const Media = preload("res://scripts/garden_media.gd")
 const Decorations = preload("res://scripts/garden_decorations.gd")
 const Hub = preload("res://scripts/garden_hub.gd")
@@ -13,12 +16,13 @@ const PREV = Rect2(626, 329, 48, 43)
 const NEXT = Rect2(771, 329, 48, 43)
 const PAGE_BADGE = Rect2(683, 329, 79, 43)
 const PAGE_SIZE = 4
-enum Shelf { ITEMS, WEAPONS, DECORATIONS, MEDIA }
-const TABS = [Rect2(45, 69, 182, 34), Rect2(242, 69, 182, 34), Rect2(439, 69, 182, 34), Rect2(636, 69, 182, 34)]
-const TAB_LABELS = ["seed_shop.loadouts", "seed_shop.weapons", "seed_shop.decorations", "seed_shop.media"]
-const HINTS = ["seed_shop.hint", "seed_shop.weapon_hint", "seed_shop.decoration_hint", "seed_shop.media_hint"]
+enum Shelf { ITEMS, WEAPONS, DECORATIONS, MEDIA, HEROINES }
+const TABS = [Rect2(45, 69, 146, 34), Rect2(202, 69, 146, 34), Rect2(359, 69, 146, 34),
+	Rect2(516, 69, 146, 34), Rect2(673, 69, 146, 34)]
+const TAB_LABELS = ["seed_shop.loadouts", "seed_shop.weapons", "seed_shop.decorations", "seed_shop.media", "seed_shop.heroines"]
+const HINTS = ["seed_shop.hint", "seed_shop.weapon_hint", "seed_shop.decoration_hint", "seed_shop.media_hint", "seed_shop.hero_hint"]
 static var MEDIA_STOCK: Array = [Media.CONSOLE, Media.JUKEBOX] + Media.CARTRIDGES + Media.TAPES
-static var STOCK: Array = [Profile.STARTING_ITEMS, Profile.STARTING_WEAPONS, Profile.GARDEN_DECORATIONS, MEDIA_STOCK]
+static var STOCK: Array = [Profile.STARTING_ITEMS, Profile.STARTING_WEAPONS, Profile.GARDEN_DECORATIONS, MEDIA_STOCK, GuestRoster.KEYS]
 const INK = Color("#241c2e")
 const GOLD = Color("#f2c88a")
 
@@ -84,6 +88,7 @@ static func draw_offer(game, card: Rect2, unlock_id: String) -> void:
 	var decorative := unlock_id in Profile.GARDEN_DECORATIONS
 	var is_weapon := unlock_id in Profile.STARTING_WEAPONS
 	var is_media := Media.PRICES.has(unlock_id)
+	var is_heroine := GuestRoster.OFFERS.has(unlock_id)
 	var item := offer_detail(unlock_id)
 	var owned: bool = game.knows_weapon(unlock_id) if is_weapon else game.profile.has_unlock(unlock_id)
 	var cost: int = Profile.SEED_OFFERS[unlock_id]
@@ -98,7 +103,13 @@ static func draw_offer(game, card: Rect2, unlock_id: String) -> void:
 	var ring := 29.0
 	game.draw_circle(icon_center, ring, Color(accent, 0.10), true, -1.0, true)
 	game.draw_arc(icon_center, ring, 0.0, TAU, 42, Color(accent, 0.62), 1.0, true)
-	if is_media:
+	if is_heroine:
+		var heroine: int = GuestRoster.OFFERS[unlock_id]
+		if heroine == GuestRoster.LUNA:
+			LunaArt.icon(game, 0, icon_center, 57.0)
+		else:
+			GuestArt.icon(game, heroine, 12, icon_center, 57.0)
+	elif is_media:
 		Media.draw_icon(game, unlock_id, icon_center, 57.0)
 	elif decorative:
 		draw_decoration(game, unlock_id, icon_center)
@@ -113,6 +124,8 @@ static func draw_offer(game, card: Rect2, unlock_id: String) -> void:
 		category = preferences.text("seed_shop.weapon_for", {"hero": game.NAMES[int(item.hero)]})
 	elif is_media:
 		category = preferences.text(media_kind(unlock_id))
+	elif is_heroine:
+		category = preferences.text("seed_shop.heroine")
 	var name: String = preferences.text(item_key + ".name", {}, item.get("name", ""))
 	var title_size := 17 if name.length() <= 20 else 14
 	view.centered(game, Rect2(origin + Vector2(8, 78), Vector2(inner_width, 22)),
@@ -130,6 +143,8 @@ static func draw_offer(game, card: Rect2, unlock_id: String) -> void:
 			label = "seed_shop.weapon_ready"
 		elif is_media:
 			label = "seed_shop.media_owned"
+		elif is_heroine:
+			label = "seed_shop.hero_ready"
 		view.centered(game, action, preferences.text(label), 14, view.CREAM, true)
 	elif can_buy:
 		var pointer: Vector2 = game.get_local_mouse_position()
@@ -147,6 +162,9 @@ static func draw_offer(game, card: Rect2, unlock_id: String) -> void:
 			preferences.text("seed_shop.shortfall", {"amount": cost - game.garden_seeds}), 10, view.DIM)
 
 static func offer_detail(id: String) -> Dictionary:
+	if GuestRoster.OFFERS.has(id):
+		var index := int(GuestRoster.OFFERS[id])
+		return {"name": GuestRoster.NAMES[index], "effect": GuestRoster.ROLES[index], "accent": GuestRoster.COLORS[index]}
 	if Media.PRICES.has(id):
 		return Media.item(id)
 	if Decorations.PRICES.has(id):

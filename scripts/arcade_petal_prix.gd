@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Roster = preload("res://scripts/guest_roster.gd")
+
 const EVENT_ID := "petal_prix"
 const TRACK_ART := preload("res://assets/art/petal_prix_track.png")
 const KART_ART := preload("res://assets/art/petal_prix_karts.png")
@@ -48,7 +50,7 @@ var markers: Array[Dictionary] = []
 func begin(new_seed: int, new_hero: int) -> void:
 	state = "playing"
 	seed_value = new_seed
-	hero_index = clampi(new_hero, 0, 4)
+	hero_index = clampi(new_hero, 0, Roster.NAMES.size() - 1)
 	ready = READY_TIME
 	elapsed = 0.0
 	remainder = 0.0
@@ -87,7 +89,7 @@ func restore(raw: Variant) -> void:
 	if not raw is Dictionary or raw.get("state", "") not in ["playing", "win", "draw", "loss"]:
 		return
 	var saved_seed: Variant = raw.get("seed", "0")
-	var saved_hero := int(_saved_number(raw, "hero", 0, 0, 4))
+	var saved_hero := int(_saved_number(raw, "hero", 0, 0, Roster.NAMES.size() - 1))
 	begin(int(saved_seed) if saved_seed is String or saved_seed is int else 0, saved_hero)
 	state = raw.state
 	ready = _saved_number(raw, "ready", 0.0, 0.0, READY_TIME)

@@ -382,7 +382,7 @@ static func draw_event(game) -> void:
 		view.centered(game, Rect2(area.position + Vector2(2, 18), Vector2(area.size.x - 4, 14)),
 			detail, 11, ink)
 	if is_game and not three_caps:
-		var prize: String = ArcadeCatalog.label(arcade_id, "prize", text.language)
+		var prize: String = ArcadeCatalog.prize(game, arcade_id)
 		view.centered(game, Rect2(265, 224, 334, 32), text.text("arcade.win_prize", {"prize": prize}), 13, view.CREAM)
 	var leave: String = card.leave
 	if is_game:

@@ -9,6 +9,7 @@ const LIST := Rect2(334, 74, 493, 289)
 const PLAY := Rect2(55, 315, 121, 37)
 const REPEAT := Rect2(186, 315, 114, 37)
 const PREV := Rect2(354, 317, 96, 34)
+const HIDDEN := Rect2(530, 317, 171, 34)
 const NEXT := Rect2(710, 317, 96, 34)
 const ROWS := 7
 const INK := Color("#271d34")
@@ -115,6 +116,11 @@ func tap(game, point: Vector2) -> void:
 		if player.stream is AudioStreamOggVorbis:
 			player.stream.loop = repeat
 		game.sound.play("ui")
+	elif HIDDEN.has_point(point):
+		var hidden_page := floori(float(Media.TAPES.find(Media.FIRST_HIDDEN_TAPE)) / ROWS)
+		if page != hidden_page:
+			page = hidden_page
+			game.sound.play("ui")
 	elif PREV.has_point(point) and page > 0:
 		page -= 1
 		game.sound.play("ui")
@@ -221,7 +227,8 @@ func draw_library(game) -> void:
 		view.button(game, PREV, prefs.text("history.previous"))
 	if page < page_count() - 1:
 		view.button(game, NEXT, prefs.text("history.next"))
-	view.centered(game, Rect2(471, 317, 194, 34), "%d / %d" % [page + 1, page_count()], 13, view.CREAM)
+	view.centered(game, Rect2(454, 317, 72, 34), "%d / %d" % [page + 1, page_count()], 13, view.CREAM)
+	view.button(game, HIDDEN, prefs.text("media.hidden_bosses"))
 
 
 func total_owned(game) -> int:

@@ -152,8 +152,12 @@ static func blight(canvas: Node2D, roots: PackedVector2Array, time: float, alpha
 		if fraction > 0.32:
 			var rise := smoothstep(0.32, 0.95, fraction)
 			var claw := bend + turn * (11.0 * rise) + Vector2(3, -1) * (6.5 * rise) + Vector2(0, -12) * rise
-			canvas.draw_colored_polygon(PackedVector2Array([bend.round(), (bend - turn * 8.0).round(),
-				(claw + Vector2(-5.0, 8.0)).round(), claw.round()]), Color("#5e254c", visible))
+			var thorn := PackedVector2Array([bend.round(), (bend - turn * 8.0).round(),
+				(claw + Vector2(-5.0, 8.0)).round(), claw.round()])
+			# During the first few growth frames pixel snapping can collapse two
+			# corners; draw the thorn once it forms a valid polygon.
+			if Geometry2D.triangulate_polygon(thorn).size() >= 3:
+				canvas.draw_colored_polygon(thorn, Color("#5e254c", visible))
 			pixel_glint(canvas, claw.round(), 3.0, Color("#ed7396", visible * 0.8))
 		for i in range(2):
 			var drift := fposmod(time * 0.70 + index * 0.16 + i * 0.33, 1.0)

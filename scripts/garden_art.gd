@@ -1,5 +1,9 @@
 extends RefCounted
 
+const GuestArt = preload("res://scripts/guest_hero_art.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+const LunaArt = preload("res://scripts/luna_art.gd")
+
 const DISPLAY_FONT = preload("res://assets/fonts/Alegreya.ttf")
 const TITLE_FONT = preload("res://assets/fonts/AlegreyaTitle.tres")
 const ITALIC_FONT = preload("res://assets/fonts/AlegreyaItalic.ttf")
@@ -77,6 +81,12 @@ const ZARIA_CENTER_X = [[173, 164, 157, 146], [167, 164, 154, 142],
 
 static func walk(canvas: Node2D, index: int, feet: Vector2, height: float, distance: float,
 		direction: Vector2, moving: bool, tint: Color) -> void:
+	if index == GuestRoster.LUNA:
+		LunaArt.walk(canvas, feet, height, distance, direction, moving, tint)
+		return
+	if GuestRoster.is_guest(index):
+		GuestArt.walk(canvas, index, feet, height, distance, direction, moving, tint)
+		return
 	var row: int
 	if absf(direction.x) >= absf(direction.y):
 		row = 1 if direction.x < 0 else 2
@@ -123,6 +133,15 @@ static func heroine(canvas: Node2D, index: int, feet: Vector2, height: float,
 	var lift = absf(step) * pace * height * 0.065
 	var stretch = 1.0 + idle * 0.022 + step * pace * 0.04 - action * 0.07
 	var lean = clampf(velocity.x / 880.0, -0.2, 0.2) + step * pace * 0.045
+	if index == GuestRoster.LUNA:
+		var moving: bool = pace > 0.08
+		LunaArt.walk(canvas, feet - Vector2(0, lift - roundf(idle * 1.4)), height,
+			clock * velocity.length(), velocity if moving else Vector2.DOWN, moving, tint)
+		return
+	if GuestRoster.is_guest(index):
+		GuestArt.actor(canvas, index, 0, feet - Vector2(0, lift) + Vector2(0, roundf(idle * 1.4)), height,
+			false, lean, tint)
+		return
 	paint_actor(canvas, HEROES, HERO_REGIONS[index], feet - Vector2(0, lift), height,
 		lean, Vector2(1.0 + action * 0.11, stretch), tint)
 

@@ -1,0 +1,8 @@
+# Mina and Whi playtest
+
+Both cost 200 Garden Seeds in **Garden → Seed Shop → Heroines**. Start **New Run** and swipe up on the roster list to find Mina and Whi. Tap a card and choose **Select Mina** or **Select Whi** to open Run Preparation. Locked entries lead to their shop cards. The mouse wheel, Up and Down keys, and on-screen arrows also scroll the list. Check that purchased heroines remain available after relaunch and appear walking in the Garden.
+
+- On the main title screen, hold the Garden Seed counter for ten seconds to add 500 Seeds. Keep holding to confirm it grants once, then release to rearm. Try releasing early, dragging out of the counter, and restarting the app after a grant.
+- Mina has 145 HP. Alternate Slam and Sweep in one fight and check that Battle Temper ramps to +55% damage over 22 seconds in combat. It resets between fights. Temper Bell speeds up the ramp. Whirl of Ruin has five spin beats, and Wide Swing, her first-chapter talent, extends the reach of her attacks.
+- Whi has 88 HP. The gold **Holy** button selects the unlimited-range single-target strike. Green **Mercy** hits nearby enemies and heals 2 HP on a damaging cast, or 3 with Gentle Light. Lavender **Ray** fires a narrow line through enemies up to cover. Touch the mode buttons or use 1, 2, and 3 on a keyboard. L cycles modes.
+- Land damage in all three stances to trigger Fivefold Judgment automatically. The room dims and Whi's portrait and quote slide in before the five hits. Interrupt during the portrait strip and between the hits to check resume. Confirm all five hits against a single tough enemy and repeat with several targets. Threefold Prism adds two damage to each beat. Mina and Whi have no Dodge, and Whi has no manual ultimate.

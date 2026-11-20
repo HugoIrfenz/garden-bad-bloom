@@ -203,7 +203,7 @@ Damage types: physical, fire, frost, poison, arcane, thorn, void. Resistances an
 - **Starting weapon:** Lilyblade, a compact sword with a broad, legible arc.
 - **Basic attack:** three-hit sword string; final hit pushes small enemies back.
 - **Dodge:** armored side-step, somewhat shorter range, low vulnerability afterward.
-- **Active skill:** `Royal Guard` — a timed frontal block; successful perfect guard refunds some cooldown and primes a counter slash.
+- **Active skill:** `Royal Guard` — blocks attacks from every direction for 0.9 seconds. The opening 0.24 seconds prime a counter slash. Recharge starts at one second from cast and switches to five seconds on the first parry.
 - **Ultimate:** `Last Stand` — temporary guard aura and empowered counter attacks; no indefinite invulnerability.
 - **Passive:** `Stubborn Bloom` — damaged armor bolsters Resolve briefly, with diminishing returns.
 - **Strength:** survivability, boss parry windows, reactive damage.
@@ -237,7 +237,7 @@ Damage types: physical, fire, frost, poison, arcane, thorn, void. Resistances an
 - **Starting weapon:** Orchid Gauntlets.
 - **Basic attack:** extremely fast melee jab/combo string; finisher launches enemies slightly.
 - **Dodge:** swift short dash with a snap-back option depending on upgrade.
-- **Active skill:** `Unauthorized Access` — leap, stun a small cone, then rapid follow-up if successful.
+- **Active skill:** `Unauthorized Access` — leap and stun in a forward cone. A damaging hit makes the skill ready again on landing, with rapid follow-ups available if she waits. A miss starts a three-second base cooldown.
 - **Ultimate:** `SECURITY BREACH` — burst of ferocious combo strikes that can launch smaller enemies into others.
 - **Passive:** `Smug Streak` — sustained clean hits build Momentum, reset partially by getting damaged.
 - **Strength:** close-range DPS, combo tempo, crowd-juggling.

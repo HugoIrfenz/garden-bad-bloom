@@ -1,6 +1,7 @@
 extends RefCounted
 
 const OrchidRhythm = preload("res://scripts/orchid_rhythm.gd")
+const GuestRoster = preload("res://scripts/guest_roster.gd")
 
 const WEDDING_RING = "angela_wedding_ring"
 const FEATHER_CROWN = "feather_crown"
@@ -18,6 +19,13 @@ const NEBULA_INDEX = "nebula_index"
 const MOTHERCAP_VEIL = "mothercap_veil"
 const ROSE_LENS = "rose_lens"
 const ORCHID_SPRING = "orchid_spring"
+const TEMPER_BELL = "temper_bell"
+const THREEFOLD_PRISM = "threefold_prism"
+const MOONLIT_CARTRIDGE = "moonlit_cartridge"
+const WOLFBOUND_CHOKER = "wolfbound_choker"
+const MOONLIT_SHOT_DISTANCE := 140.0
+const MOONLIT_SHOT_BONUS := 2
+const WOLFBOUND_EXTRA_SECONDS := 0.8
 const CAMELLIA_RIBBON = "camellia_ribbon"
 const IRIS_DICE = "iris_dice"
 const GLASS_EYELASH = "glass_eyelash"
@@ -40,24 +48,31 @@ const STATE_VERSION = 1
 const RING_GRACE = 0.72
 const UNIVERSAL_BOSS_RELICS = [WEDDING_RING, GLASS_EYELASH, LAST_TEASPOON, HONEST_RECEIPT]
 const ANGELA_BOSS_RELICS = [THORNMAIL, COUNTERCLOCK_LOCKET]
+const LUNA_BOSS_RELICS = [WOLFBOUND_CHOKER]
 const DEFINITIONS = {
-	SIXTH_SEAT_TRINKET: {"name": "Sixth Seat Trinket", "rarity": "rare", "detail": "Your first ultimate each floor restores up to 6 HP."},
-	NEBULA_INDEX: {"name": "Nebula Index", "rarity": "rare", "detail": "Active skills recharge in 10% less time."},
+	SIXTH_SEAT_TRINKET: {"name": "Sixth Seat Trinket", "rarity": "rare", "detail": "Your first ultimate each floor restores up to 6 HP. Luna triggers it with Frenzy Shift."},
+	NEBULA_INDEX: {"name": "Nebula Index", "rarity": "rare", "detail": "Active skills recharge in 10% less time. For Luna, the bonus applies to her human-form dodge."},
 	TWIN_MOON_PENDANT: {"name": "Twin Moon Pendant", "rarity": "rare", "detail": "Every fourth basic attack that lands adds 5 damage on its first landed hit."},
 	VELVET_RIBBON: {"name": "Velvet Ribbon", "rarity": "rare", "detail": "The first damaging hit taken each hostile room grants +15% movement speed for 2 seconds."},
 	PRINCES_PIN: {"name": "Prince’s Pin", "rarity": "rare", "detail": "The first landed basic hit each hostile room deals 8 extra damage."},
 	CHOIR_ANTLER: {"name": "Choir Antler", "rarity": "rare", "detail": "Deal 10% more hit damage to enemies in recovery or stunned."},
 	THORN_VEIL: {"name": "Thorn Veil", "rarity": "rare", "detail": "Reduces Root duration by 30%."},
 	SECOND_CHANCE_DIAL: {"name": "Second Chance Dial", "rarity": "rare", "detail": "The first damaging hit each room cuts your remaining dodge cooldown by 0.6 seconds."},
-	BRASSWING_PIN: {"name": "Brasswing Pin", "rarity": "rare", "detail": "Basic attacks deal 10% more damage for 2 seconds after a skill."},
+	BRASSWING_PIN: {"name": "Brasswing Pin", "rarity": "rare", "detail": "Basic attacks deal 10% more damage for 2 seconds after an active skill or Luna’s Frenzy Shift."},
 	TRUFFLE_SATCHEL: {"name": "Truffle Satchel", "rarity": "rare", "detail": "Gain 2 additional Petals on each hostile room clear."},
 	HONEST_EYES: {"name": "Honest Eyes", "rarity": "rare", "detail": "The first basic hit after each dodge deals +3 damage."},
 	FEATHER_CROWN: {"name": "Feather Crown", "rarity": "rare", "detail": "+15% movement speed for 1 second after a dodge."},
 	MOTHERCAP_VEIL: {"name": "Mothercap Veil", "rarity": "rare", "detail": "Poison duration is reduced by 30%."},
 	ROSE_LENS: {"name": "Rose Lens", "rarity": "uncommon", "detail": "Vivianne's basic projectiles travel 20% farther."},
-	ORCHID_SPRING: {"name": "Orchid Spring", "rarity": "uncommon", "detail": "Nixia's skill recharges 20% faster."},
+	ORCHID_SPRING: {"name": "Orchid Spring", "rarity": "uncommon", "detail": "Nixia's missed skill has a 20% shorter cooldown."},
 	CAMELLIA_RIBBON: {"name": "Camellia Ribbon", "rarity": "uncommon", "detail": "Virelia moves 10% faster."},
 	IRIS_DICE: {"name": "Iris Dice", "rarity": "uncommon", "detail": "Zaria's damaging hits have a 15% chance to deal double damage."},
+	TEMPER_BELL: {"name": "Temper Bell", "rarity": "uncommon", "detail": "Mina builds Battle Temper 34% faster during fights."},
+	THREEFOLD_PRISM: {"name": "Threefold Prism", "rarity": "uncommon", "detail": "Each hit of Whi's Fivefold Judgment deals +2 damage."},
+	MOONLIT_CARTRIDGE: {"name": "Moonlit Cartridge", "rarity": "uncommon",
+		"detail": "Luna’s human-form pistol shots gain +2 damage after traveling at least 140 pixels."},
+	WOLFBOUND_CHOKER: {"name": "Wolfbound Choker", "rarity": "rare",
+		"detail": "Luna spends 0.8 extra seconds in wolf form after Frenzy Shift."},
 	GLITTER_CRIME: {
 		"name": "Glitter Crime", "rarity": "uncommon",
 		"detail": "Zaria’s flank hits deal 30% more damage and leave paint. Step into a patch for one small slash.",
@@ -76,7 +91,7 @@ const DEFINITIONS = {
 	},
 	ROSEBOUND_REFRAIN: {
 		"name": "Rosebound Refrain", "rarity": "rare",
-		"detail": "Vivianne’s Midnight Verse repeats at half power after 0.54 seconds. Skill recharge takes 0.8 seconds longer.",
+		"detail": "Midnight Verse and all three Elegy bursts echo at half power. Midnight Verse recharges 0.8 seconds slower.",
 	},
 	BLACK_ROSE_INK: {
 		"name": "Black Rose Ink", "rarity": "rare",
@@ -129,15 +144,20 @@ static func definition(relic_id: String) -> Dictionary:
 	return DEFINITIONS.get(relic_id, {}).duplicate()
 
 static func boss_rotates(relic_id: String, hero: int) -> bool:
-	return relic_id in UNIVERSAL_BOSS_RELICS or (hero == 0 and relic_id in ANGELA_BOSS_RELICS)
+	if relic_id == GLASS_EYELASH and hero >= 0 and not GuestRoster.has_dodge(hero):
+		return false
+	return relic_id in UNIVERSAL_BOSS_RELICS or (hero == 0 and relic_id in ANGELA_BOSS_RELICS) \
+		or (hero == GuestRoster.LUNA and relic_id in LUNA_BOSS_RELICS)
 
 func boss_offer(seed_value: int, hero: int = -1) -> String:
 	var available: Array = UNIVERSAL_BOSS_RELICS.duplicate()
 	if hero == 0:
 		available.append_array(ANGELA_BOSS_RELICS)
+	elif hero == GuestRoster.LUNA:
+		available.append_array(LUNA_BOSS_RELICS)
 	var candidates: Array[String] = []
 	for relic_id in available:
-		if not has_relic(relic_id):
+		if not has_relic(relic_id) and boss_rotates(relic_id, hero):
 			candidates.append(relic_id)
 	if candidates.is_empty():
 		return ""

@@ -1,5 +1,7 @@
 extends RefCounted
 
+const GuestRoster = preload("res://scripts/guest_roster.gd")
+
 const THORN_EDGE = "thorn_edge"
 const QUICKSTEP = "quickstep"
 const QUICKHANDS = "quickhands"
@@ -129,6 +131,12 @@ func active_effect(id: String) -> String:
 
 
 static func compatible(id: String, hero: int) -> bool:
+	if hero == GuestRoster.LUNA:
+		return id not in [FIRST_BLOOM, STEADY_SPELL]
+	if GuestRoster.is_guest(hero):
+		return id not in [QUICKSTEP, STEADY_SPELL]
+	if hero == 1 and id == QUICKSTEP:
+		return false
 	return id != STEADY_SPELL or hero != 0
 
 

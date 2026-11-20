@@ -1,7 +1,7 @@
 extends Node
 
 const THEMES = ["forgotten", "mushroom", "clockwork", "bloodbloom", "hollow", "astral", "bloomheart"]
-const HERO_EFFECTS = ["angela", "vivianne", "nixia", "virelia", "zaria"]
+const HERO_EFFECTS = ["angela", "vivianne", "nixia", "virelia", "zaria", "mina", "whi", "luna_pistol"]
 const FADE_SECONDS = 0.68
 const MUSIC_GAIN = 0.21
 const EFFECT_GAIN = 0.45
@@ -120,6 +120,10 @@ func play(cue: String, tone := 1.0) -> void:
 		gain *= 1.32
 	if cue == "ultimate":
 		gain *= 1.38
+	if cue == "luna_pistol":
+		gain *= 0.80
+	elif cue == "luna_impact":
+		gain *= 0.76
 	if cue.begins_with("enemy_"):
 		gain *= 0.67
 	if cue == "boss_triumph":
@@ -139,7 +143,10 @@ func hero_attack(hero: int, skill := false) -> void:
 	play(HERO_EFFECTS[clampi(hero, 0, HERO_EFFECTS.size() - 1)], 0.86 if skill else 1.0)
 
 func hero_ultimate(hero: int) -> void:
-	play("ultimate", [0.94, 1.05, 0.83, 1.13, 1.20][hero])
+	if hero == 7:
+		play("luna_frenzy")
+		return
+	play("ultimate", [0.94, 1.05, 0.83, 1.13, 1.20, 0.88, 1.18][hero])
 	play(HERO_EFFECTS[clampi(hero, 0, HERO_EFFECTS.size() - 1)], 0.82)
 
 func enemy_release(move: String) -> void:

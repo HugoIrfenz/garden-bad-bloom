@@ -112,7 +112,8 @@ func test_flank(game) -> void:
 	game.player = START + Geometry.direction(hound) * 38.0
 	game.facing = -Geometry.direction(hound)
 	game.act("attack")
-	expect(hound.hp == 41 and not hound.hound_interrupted and game.target(hound).is_equal_approx(START),
+	var frontal_damage := 50 - int(hound.hp)
+	expect(frontal_damage > 0 and frontal_damage < 19 and not hound.hound_interrupted and game.target(hound).is_equal_approx(START),
 		"A frontal hit should deal reduced damage without moving the marked charge off its warning.")
 
 

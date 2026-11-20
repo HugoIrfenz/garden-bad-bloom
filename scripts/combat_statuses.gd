@@ -63,6 +63,8 @@ static func sanitized(saved: Variant) -> Dictionary:
 				restored.effects = {}
 			var record = {"left": left, "power": clampf(float(entry.get("power", 1.0)), 0.5, 3.0),
 				"source": str(entry.get("source", "")).left(48), "credit": credit_group(str(entry.get("credit", "hero")))}
+			if entry.has("online_damage_owner"):
+				record.online_damage_owner = str(entry.online_damage_owner).left(64)
 			if PULSES.has(id):
 				record.next = clampf(float(entry.get("next", PULSES[id])), 0.0, float(PULSES[id]))
 			if id == CHILL:
@@ -108,7 +110,14 @@ func apply_foe(foe: Dictionary, id: String, duration: float, potency := 1.0,
 		return false
 	if not foe.has(FOE_STATE):
 		foe[FOE_STATE] = {}
-	return apply(foe[FOE_STATE], id, duration, potency, source, credit, bool(foe.get("boss", false)), false)
+	var applied := apply(foe[FOE_STATE], id, duration, potency, source, credit, bool(foe.get("boss", false)), false)
+	# Record the player who most recently applied the effect so later status
+	# pulses are credited to its source rather than the enemy's current target.
+	if applied and game != null and game.has_meta("online_player_id") and credit_group(credit) == "hero":
+		var entry: Dictionary = entry_of(foe[FOE_STATE], id)
+		if not entry.is_empty():
+			entry.online_damage_owner = str(game.get_meta("online_player_id")).left(64)
+	return applied
 
 
 static func accepts_status(game, foe: Dictionary) -> bool:
@@ -277,6 +286,7 @@ func tick_foe(game, foe: Dictionary, delta: float, moving_or_attacking: bool) ->
 		return
 	advance_clocks(state, delta)
 	for id: String in IDS:
+		var owner := str(entry_of(state, id).get("online_damage_owner", ""))
 		var result := advance_effect(state, id, delta, moving_or_attacking)
 		var damage := int(result.get("damage", 0))
 		if damage <= 0 or not accepts_status(game, foe):
@@ -285,8 +295,15 @@ func tick_foe(game, foe: Dictionary, delta: float, moving_or_attacking: bool) ->
 			damage = mini(damage, 6)
 		if float(foe.get("ward_time", 0.0)) > 0.0:
 			damage = maxi(1, ceili(float(damage) * 0.42))
+		if foe.has("bloomheart_phase"):
+			damage = game.AstralCore.capstone_damage(foe, damage)
 		# Status pulses have no hit procs, knockback, flinch, stun or meter gain.
+		var previous_health := maxi(0, int(foe.hp))
 		foe.hp = maxi(0, int(foe.hp) - damage)
+		if not owner.is_empty() and str(result.get("credit", "")) == "hero":
+			var totals: Dictionary = foe.get("online_status_damage", {})
+			totals[owner] = int(totals.get(owner, 0)) + previous_health - int(foe.hp)
+			foe.online_status_damage = totals
 		if int(foe.hp) <= 0:
 			foe.status_kill = {"effect": id, "credit": result.credit, "source": result.source}
 			break

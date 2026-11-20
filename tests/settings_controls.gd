@@ -199,6 +199,26 @@ func run() -> void:
 		"Turning music on did not preserve the separate effects preference.")
 	game.tap(game.SettingsView.BACK.get_center())
 	game.tap(game.View.CONTINUE.get_center())
+	var before_swipe: int = game.hero
+	var row_center: Vector2 = game.View.roster_hit(3).get_center()
+	touch(game, 8, row_center, true)
+	drag(game, 8, row_center - Vector2(0, 155))
+	touch(game, 8, row_center - Vector2(0, 155), false)
+	expect(game.roster_first == game.roster_last_first() and game.hero == before_swipe,
+		"Swiping the roster selected a hero or failed to reveal its last rows.")
+	var whi_tile: Vector2 = game.View.roster_hit(game.GuestRoster.WHI - game.roster_first).get_center()
+	touch(game, 8, whi_tile, true)
+	touch(game, 8, whi_tile, false)
+	expect(game.hero == game.GuestRoster.WHI, "The last visible roster row did not select Whi.")
+	game.tap(game.View.DESCEND.get_center())
+	expect(game.screen == "seed_shop" and game.seed_shop_focus == "hero_whi",
+		"Locked Whi did not lead to her shop offer.")
+	game.tap(game.SeedShop.BACK.get_center())
+	expect(game.screen == "roster" and game.hero >= game.roster_first and game.hero < game.roster_first + game.View.ROSTER_ROWS,
+		"Returning from the shop scrolled the selected heroine out of view.")
+	game.tap(game.View.ROSTER_UP.get_center())
+	game.tap(game.View.ROSTER_UP.get_center())
+	game.tap(game.View.ROSTER_UP.get_center())
 	game.tap(game.View.roster_hit(3).get_center())
 	expect(game.screen == "roster" and game.hero == 3, "A character could not be chosen after the prior run ended.")
 	game.tap(game.View.DESCEND.get_center())

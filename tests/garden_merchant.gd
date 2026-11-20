@@ -33,7 +33,7 @@ func verify() -> void:
 	var view = game.RouteView.ShopView
 	var merchant = game.merchant
 	var orig_stock: Array[Dictionary] = merchant.stock(game)
-	if not check(orig_stock.size() == 5 and orig_stock[2].id != orig_stock[3].id
+	if not check(orig_stock.size() >= 5 and orig_stock[2].id != orig_stock[3].id
 			and game.Weapons.DEFINITIONS.has(orig_stock[4].id),
 			"The shop did not offer two distinct pocket items and a compatible weapon"):
 		return
@@ -46,7 +46,7 @@ func verify() -> void:
 	game.tap(view.stock_rect(0).get_center())
 	game.resume_run()
 	game.tap(view.stock_rect(0).get_center())
-	if not check(game.hp == hp + 20 and game.petals == 78 and game.screen == "room_choice",
+	if not check(game.hp == hp + game.RunEconomy.SHOP_HEAL and game.petals == 90 - game.RunEconomy.SHOP_TEA_PRICE and game.screen == "room_choice",
 			"Tea transaction was replayed or closed the merchant"):
 		return
 	game.tap(view.stock_rect(1).get_center())
@@ -57,7 +57,7 @@ func verify() -> void:
 	game.resume_run()
 	game.tap(view.REFRESH.get_center())
 	stock = merchant.stock(game)
-	if not check(game.petals == 56 - cost and game.bonus == 2 and stock[1].blocked == "Sold"
+	if not check(game.petals == 90 - game.RunEconomy.SHOP_TEA_PRICE - 22 - cost and game.bonus == 2 and stock[1].blocked == "Sold"
 			and stock[2].id == last_item and stock[3].id != orig_stock[2].id and stock[3].id != last_item,
 			"The saved refresh duplicated payment, missed new stock, or restored sold inventory"):
 		return

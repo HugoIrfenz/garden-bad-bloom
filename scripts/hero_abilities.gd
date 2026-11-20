@@ -23,13 +23,15 @@ const BOUQUET_ARM_TIME = 0.17
 const BOUQUET_LIFE = 2.25
 const BOUQUET_RADIUS = 24.0
 const BOUQUET_DAMAGE = 11
-const GUARD_DURATION = 0.58
+const GUARD_DURATION = 0.90
 const GUARD_UNUSED_RECHARGE = 1.0
 const GUARD_ABSORB_RECHARGE = 5.0
-const PERFECT_WINDOW = 0.16
-const GUARD_HALF_ANGLE = 1.02
+const PERFECT_WINDOW = 0.24
 const VERSE_WINDUP = 0.59
 const VERSE_RADIUS = 49.0
+const FROST_RADIUS := 53.0
+const FROST_RECHARGE := 3.6
+const FROST_VISUAL_TIME := 0.52
 const LEAP_DURATION = 0.22
 const LEAP_REACH = 84.0
 const LEAP_CONE = 64.0
@@ -38,7 +40,7 @@ const SNARE_RADIUS = 37.0
 const SNARE_LIFETIME = 4.6
 const PAINT_LIFETIME = 1.65
 const PAINT_HALF_WIDTH = 19.0
-const COOLDOWNS = [GUARD_UNUSED_RECHARGE, 2.75, 2.40, 3.65, 2.04]
+const COOLDOWNS = [GUARD_UNUSED_RECHARGE, 2.30, 3.0, 3.65, 2.04, 0.0, 0.0]
 
 static func cooldown_for(hero: int) -> float:
 	return COOLDOWNS[clampi(hero, 0, COOLDOWNS.size() - 1)]
@@ -68,6 +70,7 @@ var _guard_absorbed := false
 var _relic_bolts: Array[Dictionary] = []
 var _iron_bouquets: Array[Dictionary] = []
 var _elegy := Elegy.new()
+var _frost: Dictionary = {}
 var _counter_left := 0.0
 var _cast_serial := 0
 var _rosewall_center := Vector2.ZERO
@@ -75,9 +78,11 @@ var _rosewall_bloom := 0.0
 
 func reset() -> void:
 	_effect.clear()
+	_guard_absorbed = false
 	_relic_bolts.clear()
 	_iron_bouquets.clear()
 	_elegy.reset()
+	_frost.clear()
 	_counter_left = 0.0
 	_cast_serial = 0
 	_rosewall_bloom = 0.0
@@ -86,7 +91,7 @@ func snapshot() -> Dictionary:
 	return {"effect": _effect.duplicate(true), "counter": _counter_left, "serial": _cast_serial,
 		"guard_absorbed": _guard_absorbed,
 		"relic_bolts": _relic_bolts.duplicate(true), "iron_bouquets": _iron_bouquets.duplicate(true),
-		"elegy_magic": _elegy.snapshot()}
+		"elegy_magic": _elegy.snapshot(), "frost": _frost.duplicate()}
 
 func restore(data: Dictionary) -> void:
 	var effect: Variant = data.get("effect", {})
@@ -99,6 +104,7 @@ func restore(data: Dictionary) -> void:
 		["x", "y", "dx", "dy", "life"])
 	_iron_bouquets = restore_effects(data.get("iron_bouquets", []), ["x", "y", "age"])
 	_elegy.restore(data.get("elegy_magic"))
+	_frost = data.get("frost", {}).duplicate()
 
 static func restore_effects(saved: Variant, fields: Array) -> Array[Dictionary]:
 	var effects: Array[Dictionary] = []
@@ -130,6 +136,9 @@ func elevation() -> float:
 	return sin(PI * progress) * 22.0
 
 func action_pose() -> Dictionary:
+	if not _frost.is_empty() and float(_frost.left) > FROST_VISUAL_TIME - 0.25:
+		return {"direction": Vector2(_frost.dx, _frost.dy),
+			"phase": (FROST_VISUAL_TIME - float(_frost.left)) / 0.25, "skill": true, "impact": 0.0}
 	if _effect.is_empty():
 		return {}
 	var time := float(_effect.time)
@@ -164,8 +173,24 @@ func action_pose() -> Dictionary:
 	return {"direction": effect_direction(), "phase": clampf(phase, 0.0, 1.0), "skill": skill,
 		"impact": clampf(float(_effect.get("guard_impact", 0.0)) / 0.18, 0.0, 1.0)}
 
+func cast_frost(game) -> void:
+	var center: Vector2 = ranged_skill_landmark(game, 1)
+	var origin: Vector2 = game.player
+	var heading := origin.direction_to(center)
+	_frost = {"x": center.x, "y": center.y, "dx": heading.x, "dy": heading.y, "left": FROST_VISUAL_TIME}
+	for foe: Dictionary in game.foes:
+		var point: Vector2 = game.target(foe)
+		if center.distance_to(point) <= FROST_RADIUS and not Encounters.blocked(game, center, point, 13.0):
+			if hero_hit(game, foe, 5 + int(game.bonus / 3.0)):
+				game.combat_status.apply_foe(foe, Statuses.CHILL, 1.7, 1.0, "winter_verse")
+				stun_foe(foe, 0.90)
+	game.dodge_time = game.dodge_cooldown()
+	game.sound.play("vivianne", 1.28)
+	game.checkpoint.call_deferred()
+
 func cast(game) -> bool:
-	if game.skill_time > 0.0 or game.dash_remaining > 0.0 or locks_movement():
+	if game.skill_time > 0.0 or locks_movement() or guard_remaining() > 0.0 \
+			or (game.hero != 0 and game.dash_remaining > 0.0):
 		return false
 	var origin: Vector2 = game.player
 	var direction: Vector2 = game.facing.normalized()
@@ -196,7 +221,7 @@ func cast(game) -> bool:
 			_cast_serial += 1
 			_effect = directed_effect("leap", LEAP_DURATION, origin, direction, strength)
 			_effect.chain_id = _cast_serial
-			game.skill_time = cooldown_for_game(game)
+			game.skill_time = 0.0
 			var orchid = orchid_state(game)
 			if orchid != null:
 				refund = orchid.take_refund(game, strength)
@@ -258,23 +283,27 @@ func take_orchid_overclock(game) -> bool:
 	var orchid = orchid_state(game)
 	return orchid != null and orchid.take_overclock(game)
 
-func damage_after_guard(game, amount: int, source: Vector2, projectile: Dictionary = {}) -> int:
-	if amount <= 0 or game.hero != 0 or _effect.get("kind", "") != "guard":
-		return amount
+func try_parry(game, source: Vector2, damage := 0, projectile: Dictionary = {}) -> bool:
+	if game.hero != 0 or guard_remaining() <= 0.0:
+		return false
 	var toward_source: Vector2 = game.player.direction_to(source) if source.is_finite() else Vector2.ZERO
-	var perfect := not toward_source.is_zero_approx() and toward_source.dot(effect_direction()) >= cos(GUARD_HALF_ANGLE) \
-		and float(_effect.time) >= guard_stance_duration() - PERFECT_WINDOW
+	if toward_source.is_zero_approx():
+		toward_source = effect_direction()
+	var perfect := guard_is_perfect()
 	var relics = game.get("relics")
 	var should_save := not bool(_effect.get("absorbed", false))
 	if should_save:
 		_effect.absorbed = true
 		_guard_absorbed = true
 		game.skill_time = GUARD_ABSORB_RECHARGE
-		var equipped = game.get("relics")
-		if equipped != null:
-			game.skill_time *= equipped.skill_cooldown_factor()
-	_effect.guard_impact = 0.18
-	_effect.guard_impact_angle = toward_source.angle() if not toward_source.is_zero_approx() else effect_direction().angle()
+		if relics != null:
+			game.skill_time *= relics.skill_cooldown_factor()
+	if float(_effect.get("guard_impact", 0.0)) <= 0.10:
+		var sound = game.get("sound")
+		if sound != null:
+			sound.play("guard", 1.0)
+		_effect.guard_impact = 0.18
+		_effect.guard_impact_angle = toward_source.angle()
 	if perfect:
 		if not bool(_effect.get("perfect_rewarded", _effect.get("rewarded", false))):
 			_effect.perfect_rewarded = true
@@ -292,8 +321,8 @@ func damage_after_guard(game, amount: int, source: Vector2, projectile: Dictiona
 				if evolved or relics.has_relic(Relics.THORNMAIL):
 					launch_thornmail(game.player, toward_source, evolved)
 					should_save = true
-		if relics and relics.has_relic(Relics.COUNTERCLOCK_LOCKET) and not bool(_effect.get("reflected", false)):
-			should_save = reflect_projectile(game, projectile, amount, relics.iron_bouquet_active()) or should_save
+		if damage > 0 and relics and relics.has_relic(Relics.COUNTERCLOCK_LOCKET) and not bool(_effect.get("reflected", false)):
+			should_save = reflect_projectile(game, projectile, damage, relics.iron_bouquet_active()) or should_save
 	else:
 		if not bool(_effect.get("ordinary_rewarded", _effect.get("rewarded", false))) and not bool(_effect.get("perfect_rewarded", false)):
 			_effect.ordinary_rewarded = true
@@ -303,7 +332,14 @@ func damage_after_guard(game, amount: int, source: Vector2, projectile: Dictiona
 			should_save = relics.on_royal_guard(false) or should_save
 	if should_save and game.has_method("checkpoint"):
 		game.checkpoint.call_deferred()
-	return 0
+	return true
+
+func guard_remaining() -> float:
+	return float(_effect.time) if _effect.get("kind", "") == "guard" else 0.0
+
+func guard_is_perfect() -> bool:
+	var left := guard_remaining()
+	return left > 0.0 and left >= guard_stance_duration() - PERFECT_WINDOW
 
 func guard_recharge() -> float:
 	return GUARD_ABSORB_RECHARGE if _guard_absorbed else GUARD_UNUSED_RECHARGE
@@ -432,7 +468,19 @@ static func consume_stun(foe: Dictionary, delta: float) -> bool:
 	foe.hero_stun = maxf(0.0, time - delta)
 	return true
 
-func tick(game, delta: float) -> void:
+func tick_guard(delta: float) -> void:
+	if guard_remaining() <= 0.0:
+		return
+	_effect.time = maxf(0.0, float(_effect.time) - delta)
+	_effect.guard_impact = maxf(0.0, float(_effect.get("guard_impact", 0.0)) - delta)
+	if float(_effect.time) <= 0.0:
+		_effect.clear()
+
+func tick(game, delta: float, advance_guard := true) -> void:
+	if not _frost.is_empty():
+		_frost.left = float(_frost.left) - delta
+		if _frost.left <= 0.0:
+			_frost.clear()
 	var orchid = orchid_state(game)
 	if orchid != null:
 		orchid.tick(game, delta)
@@ -443,11 +491,13 @@ func tick(game, delta: float) -> void:
 	_counter_left = maxf(0.0, _counter_left - delta)
 	if _effect.is_empty():
 		return
+	if _effect.get("kind", "") == "guard":
+		if advance_guard:
+			tick_guard(delta)
+		return
 	var before := float(_effect.time)
 	_effect.time = maxf(0.0, before - delta)
 	match str(_effect.kind):
-		"guard":
-			_effect.guard_impact = maxf(0.0, float(_effect.get("guard_impact", 0.0)) - delta)
 		"verse":
 			if float(_effect.time) <= 0.0:
 				resolve_verse(game)
@@ -489,10 +539,15 @@ func note_elegy_hit(game, center: Vector2, sequence: int) -> void:
 func note_elegy_crescendo(game, center: Vector2) -> void:
 	_elegy.spell_trace(game, center)
 
+func buffer_leap() -> void:
+	if _effect.get("kind", "") == "leap" and float(_effect.time) <= 0.13:
+		_effect.recast = true
+
 func resolve_leap(game) -> void:
 	var center: Vector2 = game.player
 	var direction := effect_direction()
 	var hit := false
+	var splash_hit := false
 	var talents = game.get("talents")
 	var meteor: bool = talents != null and talents.owns(Talents.POCKET_METEOR) and int(_effect.strength) >= 3
 	for foe in game.foes:
@@ -507,13 +562,17 @@ func resolve_leap(game) -> void:
 			if point.distance_squared_to(center) <= Talents.METEOR_RADIUS * Talents.METEOR_RADIUS \
 					and not Encounters.blocked(game, center, point, 12.0) and hero_hit(game, foe, 7):
 				stun_foe(foe, 0.38)
+				splash_hit = true
 	if meteor:
 		talents.record_meteor(center)
+	game.skill_time = 0.0 if hit or splash_hit else game.skill_cooldown()
 	_effect.x = center.x
 	_effect.y = center.y
 	_effect.kind = "followup" if hit else "leap_impact"
 	_effect.chain_hits = 1
 	_effect.time = 0.18 if hit else 0.20
+	if (hit or splash_hit) and bool(_effect.get("recast", false)):
+		game.act.call_deferred("skill")
 
 func resolve_followup(game) -> void:
 	var center := effect_position()
@@ -611,6 +670,23 @@ func draw_effects(game) -> void:
 	if orchid != null:
 		orchid.draw(game)
 	_elegy.draw(game)
+	if not _frost.is_empty():
+		var center := Vector2(_frost.x, _frost.y).round()
+		var left := clampf(float(_frost.left) / FROST_VISUAL_TIME, 0.0, 1.0)
+		var radius := FROST_RADIUS * (0.42 + 0.58 * (1.0 - left))
+		paint_ring(canvas, center, radius, Color("#b8efff"), left)
+		for index in range(6):
+			var ray := Vector2.from_angle(index * TAU / 6.0 - PI * 0.5)
+			var tip := (center + ray * radius).round()
+			canvas.draw_line(center, tip, Color("#c7eeff", left), 2.0)
+			for turn in [-0.51, 0.51]:
+				canvas.draw_line(tip, (tip - ray.rotated(turn) * 11.0).round(), Color("#fbffff", left), 2.0)
+			Visuals.spark(canvas, tip, 5.0, Color("#e8fcff", left))
+	for foe: Dictionary in game.foes:
+		if Statuses.has_foe(foe, Statuses.CHILL) and float(foe.get("hero_stun", 0.0)) > 0.0:
+			var ground: Vector2 = game.target(foe)
+			for index in range(3):
+				Visuals.spark(canvas, (ground + Vector2((index - 1) * 12.0, 6.0 - 6.0 * (index % 2))).round(), 7.0, Color("#b9ecff", 0.82))
 	draw_iron_bouquets(canvas)
 	draw_relic_bolts(canvas)
 	if _rosewall_bloom > 0.0:
@@ -624,7 +700,7 @@ func draw_effects(game) -> void:
 	match str(_effect.kind):
 		"guard":
 			var angle := effect_direction().angle()
-			var hue := Color("#ffe1a1") if remaining >= guard_stance_duration() - PERFECT_WINDOW else Color("#85c7fc")
+			var hue := Color("#ffe1a1") if guard_is_perfect() else Color("#85c7fc")
 			var normal := effect_direction()
 			var shield: Vector2 = game.player + normal * 29.0
 			var edge := normal.orthogonal() * 13.0
@@ -633,9 +709,8 @@ func draw_effects(game) -> void:
 				shield - edge, shield + normal * 14.0])
 			canvas.draw_colored_polygon(border, Color(hue, 0.16))
 			canvas.draw_polyline(border, Color(hue, 0.9), 1.65, true)
-			canvas.draw_arc(game.player, 35.0, 0.0, TAU, 52, Color("#b0deff", 0.55), 1.45, true)
-			canvas.draw_arc(game.player, 37.0, angle - GUARD_HALF_ANGLE, angle + GUARD_HALF_ANGLE, 32, Color(hue, 0.26), 9.0, true)
-			canvas.draw_arc(game.player, 41.0, angle - GUARD_HALF_ANGLE, angle + GUARD_HALF_ANGLE, 32, hue, 2.1, true)
+			canvas.draw_arc(game.player, 35.0, 0.0, TAU, 52, Color(hue, 0.20), 6.0, true)
+			canvas.draw_arc(game.player, 38.0, 0.0, TAU, 52, Color(hue, 0.80), 1.6, true)
 			var impact := clampf(float(_effect.get("guard_impact", 0.0)) / 0.18, 0.0, 1.0)
 			if impact > 0.0:
 				var struck_at := float(_effect.get("guard_impact_angle", angle))

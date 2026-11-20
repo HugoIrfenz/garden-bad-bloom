@@ -1,6 +1,6 @@
 # Garden: Bad Bloom
 
-An offline action roguelike by **Hugo & Angela Works**. Pick a Garden girl, descend into a blighted garden, and build a run out of relics, weapon evolutions, upgrades, and bad decisions.
+An offline action roguelike by **Hugo & Angela Works**. Pick one of seven Garden girls, descend into a blighted garden, and build a run out of relics, weapon evolutions, upgrades, and bad decisions.
 
 **Free to win.** Earn Garden Seeds by playing and spend them on items, decorations, game cartridges, and soundtrack tapes.
 
@@ -29,15 +29,15 @@ Open `project.godot` in Godot 4.4.1 and run the project. The Android build uses 
 ## Implemented so far
 
 - The post-Godot splash animates the Codex mark, Hugo&Angela Works and the drooling face independently. Animated menus include rotating title close-ups, heroine-specific ability icons and illustrated results.
-- Five distinct kits with four-direction walk cycles and cinematic ultimate attacks. The room dims, each heroine’s portrait and quote slide in, and the ultimate fires once the strip clears. Angela can combine Thornmail and Counterclock Locket for the Iron Bouquet trap.
+- Seven distinct kits with directional walk cycles and illustrated combat effects. Mina and Whi are permanent Seed Shop unlocks. Mina builds power over a fight, and Whi links three light stances into an automatic finisher. The room dims, each heroine’s portrait and quote slide in, and the ultimate fires once the strip clears. Angela can combine Thornmail and Counterclock Locket for the Iron Bouquet trap.
 - Each heroine has a distinct weapon evolution available through a rest-room forge. The recipe shows where to find its ingredients. Forging replaces the current weapon, keeps the ingredient relics, and records the discovery in the Weapon Ledger.
 - Select a starting relic in Run Preparation to see its effect and trigger. In a chest, **Inspect Relic** shows its limits, carried relics, and applicable pairings. **Equip Relic** uses the chest’s choice, and **Back to Rewards** returns to the other offers.
 - The five minigames appear as main-route dungeon events. Win prizes by playing them there, or buy the Petal Console and a game cartridge to replay a favorite from **Garden → Garden Games**.
-- The Seed Shop sells the Garden Jukebox and 37 soundtrack VHS tapes. The jukebox plays owned tapes from the Garden.
+- The Seed Shop sells the Garden Jukebox and all 50 soundtrack VHS tapes. Use **Hidden Bosses** in the jukebox to find the thirteen optional boss themes.
 - Open the **Relic Ledger** in the Codex or Run Preparation to see where relics drop, which heroines can use them, and what they pair with.
 - Seeded branching floors have matching gate arrows and minimap links, timed hunts, physical altars and other encounter objects, three illustrated pocket consumables, saved merchant stock and rerolls, and biome-specific cover. Sixteen authored encounter choices are live.
 - **Garden Without End** (**Taman Tanpa Ujung** in Bahasa Indonesia) continues the same run after Bloomheart Core through generated floors with five live mutators.
-- Seven chapter bosses have persistent health bars, scored phases, and additional arena cover. Bosses wind up and recover faster as their health drops. The Bloomheart has a new final phase.
+- Seven chapter bosses have persistent health bars, scored phases, and additional arena cover. Bosses wind up and recover faster as their health drops. The campaign Bloomheart fight now has five phases.
 - Twenty-five regular enemy species include the Hedge Knight, Mycelium Leaper, Thorn Widow and Porcelain Hound. Named rooms feature Root Grapple, glass shards, spore vents, Clockwork sectors and gear rails, Leech Pond, severable Crimson Threads and the falling Hollow Palace chandelier.
 - Bundled audio covers the menus, seven exploration themes and seven independently composed boss themes. [Audio production and checks](docs/AUDIO.md)
 - Local checkpoints preserve rooms, gear, consumables, active attacks and the route after an app interruption. Earlier linear saves can still resume.
