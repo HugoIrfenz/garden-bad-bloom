@@ -299,6 +299,8 @@ var relic_ledger_page := 0
 var relic_ledger_entry := 0
 var relic_ledger_tab := 0
 var network_simulation := false
+const ONLINE_WAIT_CANCEL := Rect2(350, 222, 164, 33)
+const ONLINE_LEAVE_TIMEOUT := 5.0
 var online_peer: Node
 var online_frame: Dictionary = {}
 var online_members: Dictionary = {}
@@ -319,6 +321,8 @@ func _ready() -> void:
 	combat_status.bind(self)
 	ground_hazards.bind_combat_status(combat_status)
 	if network_simulation:
+		# These actors simulate the party but only the local view draws the HUD.
+		hide()
 		# Headless authority actors share the world but never open the solo save,
 		# process local input, play duplicate music, or create extra viewports.
 		set_process(false)
@@ -434,6 +438,11 @@ func apply_online_frame(frame: Dictionary) -> void:
 					if online_leaving:
 						_show_online_departure_summary.call_deferred()
 	var saved: Dictionary = hero_states.get(id, {})
+	var local_hero := int(me.get("hero", -1))
+	if local_hero < 0 or local_hero >= NAMES.size():
+		return
+	if not saved.is_empty() and int(saved.get("hero", -1)) != local_hero:
+		return
 	var next_room := str(campaign.get("room_id", ""))
 	var next_floor := int(campaign.get("floor_index", 0))
 	var manifest: Variant = campaign.get("manifest", {})
@@ -445,13 +454,13 @@ func apply_online_frame(frame: Dictionary) -> void:
 	floor_manifest = manifest.duplicate(true)
 	var room_key := str(next_floor) + ":" + next_room + ":" + str(campaign.get("room_serial", 0))
 	var is_new_room := online_current_room != room_key
+	hero = local_hero
 	if is_new_room:
 		floor_index = next_floor
 		room_id = next_room
 		depth = int(campaign.get("depth", 0))
 		route = int(campaign.get("route", 0))
 		run_seed = int(campaign.get("seed", 0))
-		hero = clampi(int(me.get("hero", 0)), 0, NAMES.size() - 1)
 		set_room_props(generated)
 		room_generation = int(generated.version)
 		online_current_room = room_key
@@ -535,6 +544,8 @@ func apply_online_frame(frame: Dictionary) -> void:
 		upgrades.restore(saved.get("run_upgrades", {}), hero)
 		if not relics.restore(saved.get("relics", {})):
 			relics.reset()
+	if frame.get("party_starting", false):
+		screen = "online_wait"
 	var terminal := str(campaign.get("terminal", ""))
 	if terminal in ["clear", "defeat"]:
 		last_result = {"result": terminal, "depth": depth, "elapsed_seconds": run_time,
@@ -553,10 +564,12 @@ func apply_online_frame(frame: Dictionary) -> void:
 		var pos: Variant = entry.get("position", Vector2.ZERO)
 		if not pos is Vector2:
 			continue
-		var last: Dictionary = online_positions.get(member_id, {})
-		var previous: Vector2 = last.get("to", pos)
+		var previous: Vector2 = pos if is_new_room else online_draw_position(member_id, pos)
 		online_positions[member_id] = {"from": previous, "to": pos, "time": visual_clock,
 			"moving": previous.distance_squared_to(pos) > 1.0}
+		var details: Dictionary = hero_states.get(member_id, {})
+		if not details.is_empty():
+			update_online_effects(member_id, details)
 	var missing := 0.0
 	for member: Dictionary in members.values():
 		if bool(member.get("alive", false)) and not bool(member.get("connected", true)) and not bool(member.get("departed", false)):
@@ -576,6 +589,7 @@ func leave_online_run() -> void:
 		_complete_online_leave()
 		return
 	online_leaving = true
+	confirm_end_run = false
 	online_leave_started = Time.get_ticks_msec() / 1000.0
 	online_transfer_notice = "Saving your rewards…"
 	online_peer.session.prepare_leave()
@@ -1473,6 +1487,12 @@ func _unhandled_input(event: InputEvent) -> void:
 					screen = "garden_hub"
 
 func tap(pos: Vector2) -> void:
+	if online_leaving:
+		return
+	if screen == "online_wait" and is_instance_valid(online_peer):
+		if ONLINE_WAIT_CANCEL.has_point(pos):
+			_complete_online_leave()
+		return
 	var previous_screen = screen
 	var previous_hero = hero
 	var previous_relic = selected_relic
@@ -2536,6 +2556,9 @@ func clamp_position(pos: Vector2) -> Vector2:
 
 func _process(delta: float) -> void:
 	visual_clock += delta
+	if screen == "fight" and not run_paused and is_instance_valid(online_peer):
+		# The host already simulates its own hero every physics tick.
+		player = online_peer.session.host_local_position(player)
 	tick_seed_hold(delta)
 	if screen != "roster" and roster_pointer != ROSTER_NO_POINTER:
 		cancel_roster_gesture()
@@ -2570,8 +2593,9 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_instance_valid(online_peer):
-		if online_leaving and online_peer.socket.get_ready_state() == WebSocketPeer.STATE_CLOSED and Time.get_ticks_msec() / 1000.0 - online_leave_started > 2.0:
-			_show_online_departure_summary()
+		if online_leaving:
+			if Time.get_ticks_msec() / 1000.0 - online_leave_started >= ONLINE_LEAVE_TIMEOUT:
+				_show_online_departure_summary()
 			return
 		if attack_pointer != NO_ATTACK_POINTER and not run_paused:
 			attack_held_for = minf(CHARGE_TIME, attack_held_for + delta)
@@ -3119,9 +3143,13 @@ func _draw() -> void:
 		return
 	if screen == "online_wait":
 		draw_rect(View.CANVAS, Color("#211a2e"))
-		View.frame(self, Rect2(222, 135, 420, 120), Color("#30253c"))
-		View.centered(self, Rect2(235, 157, 394, 35), "Gathering the Garden…", 25, View.CREAM, true)
-		View.centered(self, Rect2(235, 195, 394, 25), "Connecting your party", 15, View.DIM, true)
+		View.frame(self, Rect2(222, 130, 420, 140), Color("#30253c"))
+		View.centered(self, Rect2(235, 157, 394, 35), "Gathering the Garden", 25, View.CREAM, true)
+		var progress: String = online_peer.connection_progress() if is_instance_valid(online_peer) else "Connecting your party"
+		if online_frame.get("party_starting", false) and is_instance_valid(online_peer) and online_peer.game_connection_failure.is_empty():
+			progress = "Room ready. Waiting for the party"
+		View.centered(self, Rect2(235, 195, 394, 25), progress, 15, View.DIM, true)
+		View.button(self, ONLINE_WAIT_CANCEL, "Leave room")
 	elif screen in ["fight", "room_choice"]:
 		var in_endless = floor_index >= Dungeon.BIOME_COUNT if floor_index >= 0 else depth >= 28
 		View.hud(self, 7 if in_endless else active_biome)
@@ -3168,7 +3196,11 @@ func _draw() -> void:
 		View.menu(self)
 	if screen in ["reward", "clear", "talent", "forge", "minigame"]:
 		View.button(self, View.PAUSE, "Ⅱ")
-	if run_paused:
+	if online_leaving:
+		View.frame(self, Rect2(252, 150, 360, 88), Color("#30253c"))
+		View.centered(self, Rect2(265, 163, 334, 24), "Leaving the run", 22, View.CREAM, true)
+		View.centered(self, Rect2(265, 197, 334, 20), "Waiting for the host to confirm rewards", 14, View.DIM, true)
+	elif run_paused:
 		PauseView.draw(self)
 	elif screen not in ["fight", "room_choice", "reward"]:
 		View.entrance(self)
@@ -3328,34 +3360,44 @@ func play_online_feedback(members: Dictionary, states: Dictionary) -> void:
 
 # Draw each ally's authored ability state at its own location. Cut-ins remain local.
 func draw_online_effects() -> void:
-	var original_player: Vector2 = player
-	var original_hero: int = hero
-	var original_relics = relics
 	for id: String in online_members:
 		if id == str(online_peer.player_id):
 			continue
 		var member: Dictionary = online_members[id]
 		if not bool(member.get("alive", true)) or not bool(member.get("connected", true)):
 			continue
-		var state: Dictionary = online_heroes.get(id, {})
-		if state.is_empty():
-			continue
 		if not online_effects.has(id):
-			online_effects[id] = {"abilities": HeroAbilities.new(), "ultimates": HeroUltimates.new(), "relics": Relics.new(), "thread": SnareThread.new()}
+			continue
 		var effects: Dictionary = online_effects[id]
-		player = member.get("position", Vector2.ZERO)
-		hero = clampi(int(member.get("hero", 0)), 0, NAMES.size() - 1)
-		relics = effects.relics
-		relics.restore(state.get("relics", {}))
-		effects.abilities.restore(state.get("abilities", {}))
-		effects.ultimates.restore(state.get("ultimates", {}))
-		effects.thread.restore(state.get("snare_thread", {}))
-		effects.abilities.draw_effects(self)
-		effects.ultimates.draw_effects(self)
+		var point := online_draw_position(id, member.get("position", Vector2.ZERO))
+		if int(member.hero) == 2:
+			var ally_relics = effects.relics
+			var rhythm = ally_relics.orchid
+			var evolved: bool = effects.get("orchid_weapon", false)
+			rhythm.draw_at(self, point, evolved or ally_relics.has_relic(rhythm.METRONOME),
+				evolved or ally_relics.has_relic(rhythm.PUNCH_CARD), evolved)
+		effects.abilities.draw_effects(self, point)
+		effects.ultimates.draw_effects(self, point)
 		effects.thread.draw(self)
-	player = original_player
-	hero = original_hero
-	relics = original_relics
+
+
+func online_draw_position(member_id: String, fallback: Vector2) -> Vector2:
+	var track: Dictionary = online_positions.get(member_id, {})
+	if track.is_empty():
+		return fallback
+	var alpha := clampf((visual_clock - float(track.time)) / 0.10, 0.0, 1.0)
+	return (track.from as Vector2).lerp(track.to, alpha)
+
+func update_online_effects(id: String, state: Dictionary) -> void:
+	if not online_effects.has(id):
+		online_effects[id] = {"abilities": HeroAbilities.new(), "ultimates": HeroUltimates.new(), "relics": Relics.new(), "thread": SnareThread.new()}
+	var effects: Dictionary = online_effects[id]
+	if int(state.get("hero", -1)) == 2:
+		effects.relics.restore(state.get("relics", {}))
+		effects.orchid_weapon = str(state.get("armory", {}).get("equipped", "")) == effects.relics.orchid.WEAPON
+	effects.abilities.restore(state.get("abilities", {}))
+	effects.ultimates.restore(state.get("ultimates", {}))
+	effects.thread.restore(state.get("snare_thread", {}))
 
 func online_revive_candidates() -> Array[String]:
 	var result: Array[String] = []
@@ -3393,7 +3435,7 @@ func draw_online_status() -> void:
 		View.button(self, online_revive_rect(index), "Revive " + name, true)
 	if online_spectating:
 		View.frame(self, Rect2(304, 49, 256, 33), Color(0.12, 0.08, 0.16, 0.94))
-		View.centered(self, Rect2(310, 52, 244, 27), "Spectating · awaiting revival", 13, View.CREAM, true)
+		View.centered(self, Rect2(310, 52, 244, 27), "Spectating ﾂｷ awaiting revival", 13, View.CREAM, true)
 	if not online_transfer_notice.is_empty():
 		View.frame(self, Rect2(284, 83, 296, 40), Color(0.12, 0.08, 0.16, 0.95))
 		View.centered(self, Rect2(291, 88, 282, 30), online_transfer_notice, 15, View.CREAM, true)
@@ -3417,11 +3459,7 @@ func draw_online_hero(member_id: String) -> void:
 	if not online_members.has(member_id):
 		return
 	var member: Dictionary = online_members[member_id]
-	var point: Vector2 = member.get("position", Vector2.ZERO)
-	var track: Dictionary = online_positions.get(member_id, {})
-	if not track.is_empty():
-		var alpha := clampf((visual_clock - float(track.get("time", visual_clock))) / 0.20, 0.0, 1.0)
-		point = (track.get("from", point) as Vector2).lerp(track.get("to", point), alpha).round()
+	var point := online_draw_position(member_id, member.get("position", Vector2.ZERO)).round()
 	if not bool(member.get("alive", true)) or not bool(member.get("connected", true)):
 		var tint := Color("#e7c5ed") if not member.get("connected", true) else Color("#c8b7c9")
 		world_canvas.draw_circle(point, 9.0 + sin(visual_clock * 2.0) * 1.0, Color(tint, 0.30))
@@ -3434,7 +3472,7 @@ func draw_online_hero(member_id: String) -> void:
 		var direction: Vector2 = dir if dir is Vector2 else Vector2.DOWN
 		var attack_direction: Vector2 = pose.get("attack_facing", direction)
 		var feet := point.round() + Vector2(0, 11)
-		var movement := bool(track.get("moving", false))
+		var movement := bool(online_positions.get(member_id, {}).get("moving", false))
 		var distance := float(pose.get("walk_distance", visual_clock * 100.0))
 		var action_left := float(pose.get("guest_action_left", 0.0))
 		var attack_flash := float(pose.get("flash", 0.0))

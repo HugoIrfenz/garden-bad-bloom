@@ -174,7 +174,9 @@ func publish(snapshot: Dictionary) -> bool:
 	latest_epoch = epoch
 	latest_sequence = next_sequence
 	_save_recovery()
-	_receive_snapshot.rpc(epoch, next_sequence, snapshot)
+	var transport := multiplayer.multiplayer_peer
+	if transport != null and transport.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED and not multiplayer.get_peers().is_empty():
+		_receive_snapshot.rpc(epoch, next_sequence, snapshot)
 	return true
 
 @rpc("any_peer", "call_remote", "reliable")

@@ -664,9 +664,12 @@ func effect_position() -> Vector2:
 func effect_direction() -> Vector2:
 	return Vector2(_effect.dx, _effect.dy)
 
-func draw_effects(game) -> void:
+func draw_effects(game, actor_position := Vector2.INF) -> void:
+	var is_local := not actor_position.is_finite()
+	if is_local:
+		actor_position = game.player
 	var canvas: Node2D = game.world_canvas
-	var orchid = orchid_state(game)
+	var orchid = orchid_state(game) if is_local else null
 	if orchid != null:
 		orchid.draw(game)
 	_elegy.draw(game)
@@ -692,7 +695,7 @@ func draw_effects(game) -> void:
 	if _rosewall_bloom > 0.0:
 		draw_rosewall_bloom(canvas)
 	if _counter_left > 0.0:
-		canvas.draw_circle(game.player + Vector2(0.0, -45.0), 4.0, Color("#ffe6a3"), true, -1.0, true)
+		canvas.draw_circle(actor_position + Vector2(0.0, -45.0), 4.0, Color("#ffe6a3"), true, -1.0, true)
 	if _effect.is_empty():
 		return
 	var center := effect_position()
@@ -702,20 +705,20 @@ func draw_effects(game) -> void:
 			var angle := effect_direction().angle()
 			var hue := Color("#ffe1a1") if guard_is_perfect() else Color("#85c7fc")
 			var normal := effect_direction()
-			var shield: Vector2 = game.player + normal * 29.0
+			var shield: Vector2 = actor_position + normal * 29.0
 			var edge := normal.orthogonal() * 13.0
 			var border := PackedVector2Array([shield + normal * 14.0, shield + edge,
 				shield - normal * 9.0 + edge * 0.72, shield - normal * 9.0 - edge * 0.72,
 				shield - edge, shield + normal * 14.0])
 			canvas.draw_colored_polygon(border, Color(hue, 0.16))
 			canvas.draw_polyline(border, Color(hue, 0.9), 1.65, true)
-			canvas.draw_arc(game.player, 35.0, 0.0, TAU, 52, Color(hue, 0.20), 6.0, true)
-			canvas.draw_arc(game.player, 38.0, 0.0, TAU, 52, Color(hue, 0.80), 1.6, true)
+			canvas.draw_arc(actor_position, 35.0, 0.0, TAU, 52, Color(hue, 0.20), 6.0, true)
+			canvas.draw_arc(actor_position, 38.0, 0.0, TAU, 52, Color(hue, 0.80), 1.6, true)
 			var impact := clampf(float(_effect.get("guard_impact", 0.0)) / 0.18, 0.0, 1.0)
 			if impact > 0.0:
 				var struck_at := float(_effect.get("guard_impact_angle", angle))
-				var point: Vector2 = game.player + Vector2.from_angle(struck_at) * 36.0
-				canvas.draw_arc(game.player, 38.0 + (1.0 - impact) * 10.0, struck_at - 0.48, struck_at + 0.48,
+				var point: Vector2 = actor_position + Vector2.from_angle(struck_at) * 36.0
+				canvas.draw_arc(actor_position, 38.0 + (1.0 - impact) * 10.0, struck_at - 0.48, struck_at + 0.48,
 					18, Color("#fff0bf", impact), 3.6, true)
 				Visuals.spark(canvas, point, 10.0 * impact, Color("#eaf7ff", impact))
 		"verse", "verse_bloom":
@@ -731,7 +734,7 @@ func draw_effects(game) -> void:
 				canvas.draw_line(center, tip, Color(0.77, 0.26, 0.49, 0.26 * progress), 1.5, true)
 				Visuals.spark(canvas, tip, 3.0 + 3.0 * progress, Color("#ffdafa", 0.75 * progress))
 		"leap":
-			var point: Vector2 = game.player
+			var point: Vector2 = actor_position
 			var trailing := effect_direction() * 16.0
 			canvas.draw_line(point - trailing, point, Color("#bb83fa"), 3.0, true)
 		"followup", "leap_impact":

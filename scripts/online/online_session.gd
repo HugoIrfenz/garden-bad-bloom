@@ -18,6 +18,8 @@ var campaign: RefCounted
 var room: Dictionary = {}
 var active_run := ""
 var snapshot_timer := 0.0
+var initial_party_pending: Dictionary = {}
+var room_ack_after := 0.0
 var local_sequence := 0
 var host_waiting_snapshot := false
 var heroes: Dictionary = {}
@@ -30,6 +32,7 @@ var ownership_retry := 0.0
 func configure(connection: Node) -> void:
 	peer = connection
 	peer.room_changed.connect(_room_changed)
+	peer.peer_joined.connect(_republish_for_peer)
 	peer.replica.snapshot_received.connect(_snapshot_received)
 	peer.replica.host_transfer_started.connect(_transfer_started)
 	peer.replica.host_transfer_ready.connect(_transfer_ready)
@@ -46,6 +49,8 @@ func reset() -> void:
 	room.clear()
 	active_run = ""
 	snapshot_timer = 0.0
+	initial_party_pending.clear()
+	room_ack_after = 0.0
 	local_sequence = 0
 	host_waiting_snapshot = false
 	local_luna_known = false
@@ -78,6 +83,9 @@ func _room_changed(next_room: Dictionary) -> void:
 			campaign = Campaign.new()
 			campaign.begin(int(room.get("runSeed", 0)), roster)
 			campaign.run_id = active_run
+			for id: String in roster:
+				if id != peer.player_id and roster[id].connected:
+					initial_party_pending[id] = true
 			_sync_connections()
 			_create_heroes()
 			enemies.reset(campaign)
@@ -89,18 +97,27 @@ func _room_changed(next_room: Dictionary) -> void:
 func is_host() -> bool:
 	return peer != null and not peer.player_id.is_empty() and str(room.get("host", "")) == peer.player_id
 
+func host_local_position(fallback: Vector2) -> Vector2:
+	if not is_host() or campaign == null or host_waiting_snapshot:
+		return fallback
+	var member: Dictionary = campaign.party.players.get(peer.player_id, {})
+	return member.get("position", fallback)
+
 func _physics_process(delta: float) -> void:
 	if not is_host() or campaign == null or host_waiting_snapshot:
 		return
 	var now := now_seconds()
 	campaign.party.tick(delta, now)
+	for id: String in initial_party_pending.keys():
+		if bool(campaign.party.players.get(id, {}).get("departed", true)):
+			initial_party_pending.erase(id)
 	# A party can lose its last living member through a disconnect timeout or
 	# voluntary leave, not only a damage event. Spectators still need a result.
 	if campaign.terminal.is_empty() and campaign.party.wipe():
 		campaign.finish_online("defeat", heroes)
 		_publish()
 		party_wiped.emit()
-	if not campaign.party.paused(now):
+	if initial_party_pending.is_empty() and not campaign.party.paused(now):
 		var step := minf(delta, 0.05)
 		var previous_room_serial: int = campaign.room_serial
 		campaign.tick_room(heroes, 0.0)
@@ -190,10 +207,26 @@ func _publish() -> void:
 	var hero_states := {}
 	for id: String in heroes:
 		hero_states[id] = heroes[id].snapshot()
-	var frame := {"run_id": active_run, "campaign": state, "heroes": hero_states}
+	var frame := {"run_id": active_run, "campaign": state, "heroes": hero_states,
+		"party_starting": not initial_party_pending.is_empty()}
 	if peer.replica.publish(frame):
 		campaign_changed.emit(state)
 		frame_received.emit(frame)
+
+func _republish_for_peer(_remote: int) -> void:
+	if is_host() and campaign != null and not host_waiting_snapshot:
+		_publish.call_deferred()
+
+@rpc("any_peer", "call_remote", "reliable")
+func _acknowledge_initial_room(run_id: String, room_serial: int) -> void:
+	if not is_host() or campaign == null or run_id != active_run or room_serial != int(campaign.room_serial):
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	for id: String in initial_party_pending.keys():
+		if int(peer.replica.peer_ids.get(id, 0)) == sender:
+			initial_party_pending.erase(id)
+			_publish.call_deferred()
+			return
 
 func _snapshot_received(snapshot: Dictionary) -> void:
 	if str(snapshot.get("run_id", "")) != active_run or not snapshot.get("campaign") is Dictionary:
@@ -207,6 +240,14 @@ func _snapshot_received(snapshot: Dictionary) -> void:
 			_send_luna_ownership()
 	campaign_changed.emit(snapshot.campaign)
 	frame_received.emit(snapshot)
+	if bool(snapshot.get("party_starting", false)) and now_seconds() >= room_ack_after:
+		var host := int(peer.replica.peer_ids.get(str(room.get("host", "")), 0))
+		var members: Dictionary = snapshot.campaign.get("party", {}).get("players", {})
+		if not snapshot.get("heroes") is Dictionary:
+			return
+		if host > 1 and host in multiplayer.get_peers() and members.has(peer.player_id) and snapshot.heroes.has(peer.player_id):
+			room_ack_after = now_seconds() + 0.5
+			_acknowledge_initial_room.rpc_id(host, active_run, int(snapshot.campaign.get("room_serial", -1)))
 
 # The host must use the buyer's profile ownership, not its own, for the
 # merchant's Luna offer. This contains no credentials or profile data.
@@ -293,7 +334,7 @@ func _move_input(direction: Vector2, sequence: int) -> void:
 			return
 
 func _accept_move(id: String, direction: Vector2, sequence: int) -> void:
-	if campaign == null or not campaign.party.players.has(id) or campaign.party.paused(now_seconds()):
+	if campaign == null or not initial_party_pending.is_empty() or not campaign.party.players.has(id) or campaign.party.paused(now_seconds()):
 		return
 	var player: Dictionary = campaign.party.players[id]
 	if not player.alive or not player.connected or player.departed:
@@ -375,6 +416,8 @@ func _action_input(action_name: String, charge: float, sequence: int) -> void:
 			return
 
 func _accept_action(id: String, action_name: String, charge: float, sequence: int) -> void:
+	if not initial_party_pending.is_empty():
+		return
 	if campaign == null or not heroes.has(id) or campaign.party.paused(now_seconds()) 			or action_name not in ["attack", "dodge", "skill", "ultimate", "mode_0", "mode_1", "mode_2"] 			or not is_finite(charge) or sequence <= int(last_actions.get(id, -1)):
 		return
 	var member: Dictionary = campaign.party.players[id]
@@ -427,6 +470,8 @@ func _room_input(kind: String, payload: Dictionary, sequence: int) -> void:
 			return
 
 func _accept_room_input(id: String, kind: String, payload: Dictionary, sequence: int) -> void:
+	if not initial_party_pending.is_empty():
+		return
 	if campaign == null or not heroes.has(id) or campaign.party.paused(now_seconds()) or sequence <= int(last_actions.get(id, -1)):
 		return
 	var member: Dictionary = campaign.party.players[id]

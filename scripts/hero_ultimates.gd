@@ -540,7 +540,7 @@ static func point_from(raw: Array) -> Vector2:
 func effect_direction() -> Vector2:
 	return Vector2(_effect.dx, _effect.dy)
 
-func draw_effects(game) -> void:
+func draw_effects(game, actor_position := Vector2.INF) -> void:
 	var canvas: Node2D = game.world_canvas
 	for foe: Dictionary in game.foes:
 		if float(foe.get("camellia_mark", 0.0)) > 0.0 and int(foe.hp) > 0:
@@ -550,7 +550,7 @@ func draw_effects(game) -> void:
 	if _effect.is_empty():
 		return
 	var progress = clampf(float(_effect.elapsed) / float(_effect.duration), 0.0, 1.0)
-	var center: Vector2 = game.player
+	var center: Vector2 = actor_position if actor_position.is_finite() else game.player
 	match int(_effect.hero):
 		0:
 			var glow = 0.72 + sin(game.visual_clock * 10.0) * 0.16

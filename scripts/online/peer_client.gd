@@ -15,8 +15,10 @@ const RETRY_SECONDS := 2.0
 const HEARTBEAT_SECONDS := 20.0
 const CONNECT_TIMEOUT_SECONDS := 10.0
 const PEER_RECOVERY_SECONDS := 4.0
+const FIRST_PEER_TIMEOUT := 12.0
 const OnlineSession = preload("res://scripts/online/online_session.gd")
 const RunReplica = preload("res://scripts/online/run_replica.gd")
+const RoomSocketPeer = preload("res://scripts/online/room_socket_peer.gd")
 const DEFAULT_ICE := [{"urls": ["stun:stun.cloudflare.com:3478"]}]
 
 var endpoint := ""
@@ -26,7 +28,13 @@ var username := ""
 var player_id := ""
 var room: Dictionary = {}
 var ice_servers: Array = []
+var ice_requested := false
+var relay_unavailable_reason := ""
 var mesh: WebRTCMultiplayerPeer
+var game_socket_peer: MultiplayerPeerExtension
+var fallback_requested := false
+var fallback_deadline := 0.0
+var transport_announced := false
 var socket := WebSocketPeer.new()
 var socket_state := WebSocketPeer.STATE_CLOSED
 var create_request: HTTPRequest
@@ -40,7 +48,11 @@ var heartbeat := 0.0
 var socket_connect_started := -1.0
 var peers: Dictionary = {}
 var pending_signals: Array[Dictionary] = []
+var remote_description_ready: Dictionary = {}
 var peer_recovery: Dictionary = {}
+var first_peer_deadlines: Dictionary = {}
+var first_peer_retry_used := false
+var game_connection_failure := ""
 
 func _ready() -> void:
 	replica = RunReplica.new()
@@ -101,6 +113,8 @@ func _created(result: int, response_code: int, _headers: PackedStringArray, body
 
 func open_socket() -> Error:
 	socket = WebSocketPeer.new()
+	socket.inbound_buffer_size = 2 * RoomSocketPeer.MAX_PACKET_BYTES
+	socket.outbound_buffer_size = 2 * RoomSocketPeer.MAX_PACKET_BYTES
 	socket_state = WebSocketPeer.STATE_CONNECTING
 	socket_connect_started = Time.get_ticks_msec() / 1000.0
 	var address := endpoint
@@ -155,15 +169,27 @@ func _process(delta: float) -> void:
 		if heartbeat >= HEARTBEAT_SECONDS:
 			heartbeat = 0.0
 			send({"type": "ping"})
+		_check_first_peer_deadlines(tick_now)
 		_recover_dropped_peer(tick_now)
+		if fallback_deadline > 0.0 and tick_now >= fallback_deadline:
+			fallback_deadline = 0.0
+			game_connection_failure = "Game relay unavailable. Leave and rejoin."
+			connection_problem.emit(game_connection_failure)
 	while state == WebSocketPeer.STATE_OPEN and socket.get_available_packet_count() > 0:
-		var payload: Variant = JSON.parse_string(socket.get_packet().get_string_from_utf8())
-		if payload is Dictionary:
-			receive(payload)
+		var bytes := socket.get_packet()
+		if socket.was_string_packet():
+			var payload: Variant = JSON.parse_string(bytes.get_string_from_utf8())
+			if payload is Dictionary:
+				receive(payload)
+		elif game_socket_peer != null:
+			game_socket_peer.receive_packet(bytes)
 	if state == WebSocketPeer.STATE_CLOSED and socket_state != state and not deliberate_close:
 		# The room removes this connection from the other phones while it is
 		# offline. Rebuild our side too, otherwise a rejoined app can retain stale
 		# peer entries and never negotiate a fresh connection with the party.
+		transport_announced = false
+		if game_socket_peer != null:
+			game_socket_peer.sync_peers({})
 		if mesh != null:
 			for id: String in peers.keys():
 				var remote := int(peers[id])
@@ -171,7 +197,11 @@ func _process(delta: float) -> void:
 					mesh.remove_peer(remote)
 			peers.clear()
 		pending_signals.clear()
+		remote_description_ready.clear()
 		peer_recovery.clear()
+		first_peer_deadlines.clear()
+		ice_requested = false
+		ice_servers.clear()
 		if not token.is_empty() and deadline <= 0.0:
 			deadline = Time.get_ticks_msec() / 1000.0 + REJOIN_SECONDS
 			next_retry = 0.0
@@ -188,7 +218,6 @@ func receive(message: Dictionary) -> void:
 			token = str(message.get("token", token))
 			deadline = 0.0
 			session_joined.emit(code, token, player_id)
-			send({"type": "ice"})
 		"room":
 			var old_host := str(room.get("host", ""))
 			var old_epoch := int(room.get("epoch", -1))
@@ -197,11 +226,24 @@ func receive(message: Dictionary) -> void:
 			if old_host != str(room.get("host", "")) or old_epoch != int(room.get("epoch", -1)):
 				host_changed.emit(str(room.get("host", "")), int(room.get("epoch", 0)))
 			room_changed.emit(room)
+			if room.get("phase") == "playing" and not transport_announced:
+				transport_announced = true
+				send({"type": "game_transport_ready"})
+			if room.get("transport") == "room-socket":
+				refresh_game_socket()
+				return
+			if room.get("phase") == "playing" and not ice_requested:
+				ice_requested = true
+				send({"type": "ice"})
 			refresh_peers()
 		"ice":
-			ice_servers = message.get("iceServers", DEFAULT_ICE)
+			ice_servers = supported_ice_servers(message.get("iceServers", DEFAULT_ICE))
+			relay_unavailable_reason = str(message.get("relayReason", ""))
+			print("Co-op relay credentials offered: ", bool(message.get("relayAvailable", false)), " ", relay_unavailable_reason)
 			refresh_peers()
 		"signal":
+			if room.get("transport") == "room-socket":
+				return
 			pending_signals.append(message)
 			drain_signals()
 		"left":
@@ -209,8 +251,59 @@ func receive(message: Dictionary) -> void:
 		"error":
 			connection_problem.emit(str(message.get("message", "Online connection failed.")))
 
+static func supported_ice_servers(servers: Array) -> Array:
+	var filtered: Array = []
+	for server: Dictionary in servers:
+		var raw: Variant = server.get("urls", [])
+		var urls: Array = [raw] if raw is String else raw
+		var usable: Array[String] = []
+		for entry: String in urls:
+			if entry.begins_with("stun:") or (entry.begins_with("turn:") and not entry.contains("transport=tcp")):
+				usable.append(entry)
+		if usable.is_empty():
+			continue
+		if usable.any(func(url: String): return url == "turn:turn.cloudflare.com:3478?transport=udp"):
+			var alternate := "turn:turn.cloudflare.com:443?transport=udp"
+			usable.erase(alternate)
+			usable.push_front(alternate)
+		var item := server.duplicate(true)
+		item.urls = usable
+		filtered.append(item)
+	return DEFAULT_ICE.duplicate(true) if filtered.is_empty() else filtered
+
+func refresh_game_socket() -> void:
+	var local_id := 0
+	var desired := {}
+	for row: Dictionary in room.get("players", []):
+		if row.id == player_id:
+			local_id = int(row.peerId)
+		elif bool(row.connected):
+			desired[int(row.peerId)] = true
+	if local_id < 2:
+		return
+	if game_socket_peer == null:
+		first_peer_deadlines.clear()
+		peer_recovery.clear()
+		peers.clear()
+		if mesh != null:
+			mesh.close()
+			mesh = null
+		game_socket_peer = RoomSocketPeer.new()
+		game_socket_peer.configure(socket, local_id)
+		multiplayer.multiplayer_peer = game_socket_peer
+		if not multiplayer.peer_connected.is_connected(_peer_connected):
+			multiplayer.peer_connected.connect(_peer_connected)
+		if not multiplayer.peer_disconnected.is_connected(_peer_disconnected):
+			multiplayer.peer_disconnected.connect(_peer_disconnected)
+	else:
+		game_socket_peer.configure(socket, local_id)
+	fallback_deadline = 0.0
+	game_connection_failure = ""
+	game_socket_peer.sync_peers(desired)
+
 func refresh_peers() -> void:
-	if room.is_empty() or player_id.is_empty() or ice_servers.is_empty():
+	# The room socket is sufficient for lobby controls. Open the game mesh only after Start.
+	if str(room.get("phase", "")) != "playing" or room.get("transport") == "room-socket" or player_id.is_empty() or ice_servers.is_empty():
 		return
 	var local_id := 0
 	var desired := {}
@@ -238,6 +331,8 @@ func refresh_peers() -> void:
 			if mesh.has_peer(old_peer):
 				mesh.remove_peer(old_peer)
 			peers.erase(id)
+			remote_description_ready.erase(id)
+			first_peer_deadlines.erase(old_peer)
 	for id: String in desired:
 		if peers.has(id):
 			continue
@@ -254,8 +349,13 @@ func refresh_peers() -> void:
 			connection_problem.emit("Could not add peer: " + error_string(error))
 			continue
 		peers[id] = remote
+		# The offerer retries. The answerer still needs a bounded waiting message.
+		var wait := FIRST_PEER_TIMEOUT if remote < local_id else FIRST_PEER_TIMEOUT * 2.0 + 6.0
+		first_peer_deadlines[remote] = Time.get_ticks_msec() / 1000.0 + wait
 		if remote < local_id:
-			connection.create_offer()
+			var offer_error := connection.create_offer()
+			if offer_error != OK:
+				push_warning("WebRTC offer failed: " + error_string(offer_error))
 	drain_signals()
 
 func _description_created(kind: String, sdp: String, id: String) -> void:
@@ -266,23 +366,58 @@ func _description_created(kind: String, sdp: String, id: String) -> void:
 	send({"type": "signal", "to": id, "kind": kind, "payload": {"sdp": sdp}})
 
 func _candidate_created(mid: String, index: int, candidate: String, id: String) -> void:
+	if candidate.contains(" typ relay"):
+		print("Co-op gathered a relay candidate.")
 	send({"type": "signal", "to": id, "kind": "candidate", "payload": {"mid": mid, "index": index, "candidate": candidate}})
 
 func drain_signals() -> void:
 	if mesh == null:
 		return
 	var remaining: Array[Dictionary] = []
-	for message: Dictionary in pending_signals:
-		var id := str(message.get("from", ""))
-		if not peers.has(id) or not mesh.has_peer(int(peers[id])):
-			remaining.append(message)
-			continue
-		var connection: WebRTCPeerConnection = mesh.get_peer(int(peers[id])).connection
-		var payload: Dictionary = message.get("payload", {})
-		match str(message.get("kind", "")):
-			"offer", "answer": connection.set_remote_description(str(message.kind), str(payload.get("sdp", "")))
-			"candidate": connection.add_ice_candidate(str(payload.get("mid", "")), int(payload.get("index", 0)), str(payload.get("candidate", "")))
+	# Apply offers and answers before candidates, even when signaling delivers
+	# the candidate first or both messages arrive in the same poll.
+	for candidates_only: bool in [false, true]:
+		for message: Dictionary in pending_signals:
+			var kind := str(message.get("kind", ""))
+			if (kind == "candidate") != candidates_only:
+				continue
+			var id := str(message.get("from", ""))
+			if not peers.has(id) or not mesh.has_peer(int(peers[id])):
+				remaining.append(message)
+				continue
+			var connection: WebRTCPeerConnection = mesh.get_peer(int(peers[id])).connection
+			var payload: Dictionary = message.get("payload", {})
+			if kind == "offer" or kind == "answer":
+				var error := connection.set_remote_description(kind, str(payload.get("sdp", "")))
+				if error == OK:
+					remote_description_ready[id] = true
+				else:
+					push_warning("WebRTC description failed: " + error_string(error))
+			elif kind == "candidate":
+				if not remote_description_ready.has(id):
+					remaining.append(message)
+					continue
+				var error := connection.add_ice_candidate(str(payload.get("mid", "")), int(payload.get("index", 0)), str(payload.get("candidate", "")))
+				if error != OK:
+					push_warning("WebRTC candidate failed: " + error_string(error))
 	pending_signals = remaining
+
+func connection_progress() -> String:
+	if not game_connection_failure.is_empty():
+		return game_connection_failure
+	if game_socket_peer != null:
+		return "Using the room relay. Waiting for Room 1"
+	if fallback_deadline > 0.0:
+		return "Switching to the room relay"
+	if mesh == null or peers.is_empty():
+		return "Setting up the game connection"
+	var host := str(room.get("host", ""))
+	var remote := int(peers.get(host, 0))
+	if remote > 1 and remote in multiplayer.get_peers():
+		return "Connected. Waiting for Room 1"
+	if not remote_description_ready.has(host) and host != player_id:
+		return "Waiting for the host to respond"
+	return "Connecting to your party"
 
 func select_hero(hero: int, ready: bool) -> void:
 	send({"type": "select", "hero": hero, "ready": ready})
@@ -302,6 +437,14 @@ func leave() -> void:
 
 func reset_session() -> void:
 	deliberate_close = true
+	if game_socket_peer != null:
+		game_socket_peer.close()
+		if multiplayer.multiplayer_peer == game_socket_peer:
+			multiplayer.multiplayer_peer = null
+		game_socket_peer = null
+	fallback_deadline = 0.0
+	fallback_requested = false
+	transport_announced = false
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
 	if mesh != null:
@@ -311,13 +454,19 @@ func reset_session() -> void:
 	mesh = null
 	peers.clear()
 	pending_signals.clear()
+	remote_description_ready.clear()
 	peer_recovery.clear()
+	first_peer_deadlines.clear()
+	first_peer_retry_used = false
+	game_connection_failure = ""
 	room.clear()
 	if replica != null:
 		replica.clear()
 	if session != null:
 		session.reset()
 	ice_servers.clear()
+	ice_requested = false
+	relay_unavailable_reason = ""
 	deadline = 0.0
 	heartbeat = 0.0
 	socket_connect_started = -1.0
@@ -328,6 +477,8 @@ func reset_session() -> void:
 	deliberate_close = false
 
 func _peer_connected(id: int) -> void:
+	game_connection_failure = ""
+	first_peer_deadlines.erase(id)
 	peer_recovery.erase(id)
 	peer_joined.emit(id)
 
@@ -337,6 +488,29 @@ func _peer_disconnected(id: int) -> void:
 	if mesh != null and id < multiplayer.get_unique_id() and peers.values().has(id):
 		peer_recovery[id] = Time.get_ticks_msec() / 1000.0 + PEER_RECOVERY_SECONDS
 	peer_left.emit(id)
+
+func _check_first_peer_deadlines(now: float) -> void:
+	for id: int in first_peer_deadlines.keys():
+		if now < float(first_peer_deadlines[id]):
+			continue
+		first_peer_deadlines.erase(id)
+		if id in multiplayer.get_peers() or not peers.values().has(id):
+			continue
+		if not fallback_requested and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			fallback_requested = true
+			fallback_deadline = now + 6.0
+			send({"type": "game_transport_fallback"})
+			return
+		if first_peer_retry_used or id > multiplayer.get_unique_id():
+			game_connection_failure = "Connection timed out. Leave and rejoin."
+			if relay_unavailable_reason == "budget-exhausted":
+				game_connection_failure = "Connection timed out. Relay limit reached."
+			connection_problem.emit(game_connection_failure)
+			continue
+		first_peer_retry_used = true
+		push_warning("Game connection timed out. Reauthenticating to retry once.")
+		socket.close(1000, "Retrying game connection")
+		return
 
 func _recover_dropped_peer(now: float) -> void:
 	for id: int in peer_recovery.keys():

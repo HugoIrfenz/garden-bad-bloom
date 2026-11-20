@@ -16,9 +16,14 @@ const canEquipRelic = (hero, id) => id === '' || id === 'angela_wedding_ring' ||
   || (id === 'glass_eyelash' && [0, 2, 3, 4, 7].includes(hero)) || (id !== '' && id === SIGNATURE_RELICS[hero]);
 const REJOIN_MS = 60_000;
 const MAX_MESSAGE = 32_768;
+const GAME_PACKET_HEADER = 6;
+const MAX_GAME_PACKET = 1024 * 1024 + GAME_PACKET_HEADER;
+const GAME_BYTES_PER_SECOND = 4 * 1024 * 1024;
+const GAME_PACKETS_PER_SECOND = 100;
 // Small ceiling for a private friends-only playtest. It limits the number of
 // credentials, not bytes: Cloudflare's relay can still bill for overages.
-const MONTHLY_RELAY_CREDENTIALS = 32;
+const MONTHLY_RELAY_CREDENTIALS = 64;
+const RELAY_BUDGET_STORAGE_KEY = 'relay-budget-v2';
 const RELAY_CREDENTIAL_SECONDS = 10_800;
 const encoder = new TextEncoder();
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -59,18 +64,24 @@ export default {
 };
 
 export class GardenRoom {
-  constructor(ctx, env) { this.ctx = ctx; this.env = env; this.messageQueue = Promise.resolve(); }
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this.messageQueue = Promise.resolve();
+    this.gameRoom = null;
+    this.gameRates = new Map();
+  }
 
   async fetch(request) {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/reserve-relay') {
       return this.ctx.blockConcurrencyWhile(async () => {
         const month = new Date().toISOString().slice(0, 7);
-        let budget = await this.ctx.storage.get('relay-budget');
+        let budget = await this.ctx.storage.get(RELAY_BUDGET_STORAGE_KEY);
         if (!budget || budget.month !== month) budget = { month, count: 0 };
         if (budget.count >= MONTHLY_RELAY_CREDENTIALS) return json({ error: 'Monthly relay limit reached.' }, 429);
         budget.count++;
-        await this.ctx.storage.put('relay-budget', budget);
+        await this.ctx.storage.put(RELAY_BUDGET_STORAGE_KEY, budget);
         return new Response(null, { status: 204 });
       });
     }
@@ -105,6 +116,8 @@ export class GardenRoom {
   }
 
   async handleMessage(ws, message) {
+    if (message instanceof ArrayBuffer) return this.forwardGamePacket(ws, message);
+    this.gameRoom = null;
     if (typeof message !== 'string' || encoder.encode(message).byteLength > MAX_MESSAGE) return ws.close(1009, 'Message too large.');
     let data;
     try { data = JSON.parse(message); } catch { return ws.close(1003, 'Invalid message.'); }
@@ -117,6 +130,23 @@ export class GardenRoom {
     if (!player || player.departed || !player.connected) return ws.close(1008, 'Session expired.');
     const type = String(data.type || '');
     room.touched = Date.now();
+    if (type === 'game_transport_ready' && room.phase === 'playing') {
+      if (player.roomSocket === true) return;
+      player.roomSocket = true;
+      await this.ctx.storage.put('room', room);
+      return;
+    }
+    if (type === 'game_transport_fallback' && room.phase === 'playing') {
+      if (room.transport === 'room-socket') return;
+      const party = Object.values(room.players).filter(p => p.connected && !p.departed);
+      if (party.length < 2 || party.some(p => p.roomSocket !== true)) {
+        return this.send(ws, { type: 'error', message: 'Everyone needs the updated co-op build to use the fallback.' });
+      }
+      room.transport = 'room-socket';
+      await this.ctx.storage.put('room', room);
+      this.publish(room);
+      return;
+    }
     if (type === 'signal') {
       const target = room.players[data.to];
       if (!target || !target.connected || target.departed || target.id === player.id || !['offer', 'answer', 'candidate'].includes(data.kind)) return;
@@ -127,7 +157,7 @@ export class GardenRoom {
     if (type === 'ice') {
       if (Date.now() - Number(attachment.lastIce || 0) < 60_000) return this.send(ws, { type: 'error', message: 'Please wait before requesting new relay credentials.' });
       attachment.lastIce = Date.now(); ws.serializeAttachment(attachment);
-      return this.sendIce(ws);
+      return this.sendIce(ws, player.id);
     }
     if (type === 'select' && room.phase === 'lobby') {
       if (!Number.isInteger(data.hero) || data.hero < 0 || data.hero >= 8 || typeof data.ready !== 'boolean') return;
@@ -167,6 +197,39 @@ export class GardenRoom {
     await this.ctx.storage.put('room', room);
     if (type === 'life') await this.scheduleDeadline(room);
     this.publish(room);
+  }
+
+  async forwardGamePacket(ws, packet) {
+    if (packet.byteLength <= GAME_PACKET_HEADER || packet.byteLength > MAX_GAME_PACKET) return;
+    const id = ws.deserializeAttachment()?.id;
+    if (!id) return;
+    const room = this.gameRoom ??= await this.ctx.storage.get('room');
+    if (room?.phase !== 'playing' || room.transport !== 'room-socket') return;
+    const sender = room.players[id];
+    if (!sender?.connected || sender.departed || sender.roomSocket !== true) return;
+
+    const seconds = Math.floor(Date.now() / 1000);
+    let rate = this.gameRates.get(id);
+    if (!rate || rate.seconds !== seconds) {
+      rate = { seconds, bytes: 0, packets: 0 };
+      this.gameRates.set(id, rate);
+    }
+    rate.bytes += packet.byteLength;
+    rate.packets++;
+    if (rate.bytes > GAME_BYTES_PER_SECOND || rate.packets > GAME_PACKETS_PER_SECOND) return;
+
+    const header = new DataView(packet);
+    const target = header.getInt32(0, true);
+    if (header.getUint8(4) > 2) return;
+    header.setInt32(0, sender.peerId, true);
+    for (const recipient of this.ctx.getWebSockets()) {
+      const key = recipient.deserializeAttachment()?.id;
+      const member = key && room.players[key];
+      if (!member?.connected || member.departed || member.roomSocket !== true || key === id) continue;
+      if (target > 0 && member.peerId !== target) continue;
+      if (target < 0 && member.peerId === -target) continue;
+      try { recipient.send(packet); } catch { /* Closing connection. */ }
+    }
   }
 
   async authenticate(ws, attachment, room, data) {
@@ -220,6 +283,8 @@ export class GardenRoom {
     return pending;
   }
   async disconnect(ws) {
+    this.gameRoom = null;
+    this.gameRates.delete(ws.deserializeAttachment()?.id);
     const { id } = ws.deserializeAttachment() || {};
     if (!id) return;
     ws.serializeAttachment({ id: '', lastIce: 0 });
@@ -241,6 +306,7 @@ export class GardenRoom {
 
   alarm() {
     const pending = this.messageQueue.then(async () => {
+      this.gameRoom = null;
       const room = await this.ctx.storage.get('room');
       if (!room) return;
       const now = Date.now();
@@ -272,28 +338,47 @@ export class GardenRoom {
   sendTo(id, data) { for (const ws of this.ctx.getWebSockets()) if (ws.deserializeAttachment()?.id === id) this.send(ws, data); }
   publish(room) {
     const players = Object.values(room.players).filter(p => !p.departed).map(({ id, peerId, username, hero, ready, relic, weapon, alive, connected, deadline }) => ({ id, peerId, username, hero, ready, relic, weapon, alive: alive !== false, connected, deadline }));
-    const state = { type: 'room', code: room.code, host: room.host, epoch: room.epoch, phase: room.phase, players, runSeed: room.runSeed ?? null, runId: room.runId ?? '' };
+    const state = { type: 'room', code: room.code, host: room.host, epoch: room.epoch, phase: room.phase, players, runSeed: room.runSeed ?? null, runId: room.runId ?? '', transport: room.transport ?? 'webrtc' };
     for (const ws of this.ctx.getWebSockets()) if (ws.deserializeAttachment()?.id) this.send(ws, state);
   }
-  async sendIce(ws) {
-    const fallback = { type: 'ice', iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], relayAvailable: false };
-    if (!this.env.TURN_KEY_ID || !this.env.TURN_API_TOKEN) return this.send(ws, fallback);
+  async sendIce(ws, playerId) {
+    const fallback = reason => this.send(ws, {
+      type: 'ice', iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }],
+      relayAvailable: false, relayReason: reason
+    });
+    if (!this.env.TURN_KEY_ID || !this.env.TURN_API_TOKEN) return fallback('not-configured');
     try {
-      // A private, shared Durable Object limits the number of short-lived
-      // credentials for this application. This is NOT a hard spending cap.
+      const cacheKey = `relay:${playerId}`;
+      const cached = await this.ctx.storage.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now() + 5 * 60_000) {
+        return this.send(ws, { type: 'ice', iceServers: cached.iceServers, relayAvailable: true });
+      }
+
+      // The monthly budget is for newly issued credentials. Re-authentication
+      // of the same player in this room can reuse a still-valid allocation key.
       const budget = this.env.GARDENS.get(this.env.GARDENS.idFromName('__relay_budget_v1'));
       const reservation = await budget.fetch('https://garden.internal/reserve-relay', { method: 'POST' });
-      if (!reservation.ok) return this.send(ws, fallback);
+      if (!reservation.ok) {
+        const rejection = await reservation.json().catch(() => null);
+        if (reservation.status === 429 && rejection?.error === 'Monthly relay limit reached.') {
+          return fallback('budget-exhausted');
+        }
+        console.warn('Relay budget service rejected reservation', reservation.status);
+        return fallback('budget-unavailable');
+      }
       const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(this.env.TURN_KEY_ID)}/credentials/generate-ice-servers`, {
         method: 'POST', headers: { authorization: `Bearer ${this.env.TURN_API_TOKEN}`, 'content-type': 'application/json' },
         body: JSON.stringify({ ttl: RELAY_CREDENTIAL_SECONDS })
       });
-      if (!response.ok) throw new Error('TURN credentials unavailable');
+      if (!response.ok) return fallback('provider-unavailable');
       const data = await response.json();
-      if (!Array.isArray(data.iceServers)) throw new Error('Invalid TURN response');
+      if (!Array.isArray(data.iceServers)) return fallback('provider-unavailable');
+      await this.ctx.storage.put(cacheKey, {
+        expiresAt: Date.now() + RELAY_CREDENTIAL_SECONDS * 1000, iceServers: data.iceServers
+      });
       this.send(ws, { type: 'ice', iceServers: data.iceServers, relayAvailable: true });
     } catch {
-      this.send(ws, fallback);
+      fallback('provider-unavailable');
     }
   }
 }

@@ -167,9 +167,12 @@ func take_overclock(game) -> bool:
 
 
 func draw(game) -> void:
+	draw_at(game, game.player, relic_enabled(game, METRONOME), relic_enabled(game, PUNCH_CARD), evolved(game))
+
+func draw_at(game, position: Vector2, metronome: bool, punch_card: bool, evolved_weapon: bool) -> void:
 	var canvas: Node2D = game.world_canvas
-	var center: Vector2 = game.player + Vector2(0.0, 10.0)
-	if relic_enabled(game, METRONOME) and game.room_arrival <= 0.0 and not game.foes.is_empty():
+	var center := position + Vector2(0.0, 10.0)
+	if metronome and game.room_arrival <= 0.0 and not game.foes.is_empty():
 		var phase := fposmod(room_elapsed, BEAT_PERIOD) / BEAT_PERIOD
 		var distance := minf(phase, 1.0 - phase)
 		var edge := BEAT_TOLERANCE / BEAT_PERIOD
@@ -181,12 +184,12 @@ func draw(game) -> void:
 			var pip := center + Vector2(-22.0, 0.0)
 			canvas.draw_colored_polygon(PackedVector2Array([pip + Vector2(0, -3), pip + Vector2(3, 0),
 				pip + Vector2(0, 3), pip + Vector2(-3, 0)]), GOLD)
-		if evolved(game):
+		if evolved_weapon:
 			for pip in range(RHYTHM_GOAL):
 				var point := center + Vector2(13.0 + 5.0 * pip, 9.0)
 				var filled := overclock_ready or pip < streak
 				canvas.draw_circle(point, 1.75, Color(GOLD, 0.95 if filled else 0.45), filled, 1.0, true)
-	if relic_enabled(game, PUNCH_CARD) and card_hits > 0:
+	if punch_card and card_hits > 0:
 		canvas.draw_arc(center, 25.0, PI * 0.55, PI * 0.55 + PI * 0.78 * float(card_hits) / CARD_GOAL,
 			24, Color("#ca81e4", 0.84), 2.0, true)
 	if burst.is_empty():
