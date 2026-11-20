@@ -362,6 +362,10 @@ func open_multiplayer() -> void:
 	lobby.game = self
 	add_child(lobby)
 
+func multiplayer_lobby_visible() -> bool:
+	var lobby := get_node_or_null("OnlineLobby") as Control
+	return lobby != null and lobby.visible
+
 # Keep the lobby/network node alive underneath the battle while the room runs.
 func begin_online(peer: Node) -> void:
 	if is_instance_valid(online_peer):
@@ -1357,6 +1361,8 @@ func cancel_bow_charge() -> void:
 	bow_release = -1.0
 
 func _unhandled_input(event: InputEvent) -> void:
+	if multiplayer_lobby_visible():
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed and not event.canceled:
 			press_screen_touch(event.index, event.position)
@@ -3109,6 +3115,8 @@ func danger_radius(foe: Dictionary) -> float:
 	return 76.0 if foe.hp * 2 < foe.max else 54.0
 
 func _draw() -> void:
+	if multiplayer_lobby_visible():
+		return
 	if screen == "online_wait":
 		draw_rect(View.CANVAS, Color("#211a2e"))
 		View.frame(self, Rect2(222, 135, 420, 120), Color("#30253c"))

@@ -51,6 +51,7 @@ func _ready() -> void:
 	add_child(session)
 	session.configure(self)
 	create_request = HTTPRequest.new()
+	create_request.timeout = CONNECT_TIMEOUT_SECONDS
 	add_child(create_request)
 	create_request.request_completed.connect(_created)
 
@@ -82,8 +83,11 @@ func rejoin(server_url: String, room_code: String, saved_token: String) -> Error
 	return open_socket()
 
 func _created(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	var payload: Variant = JSON.parse_string(body.get_string_from_utf8())
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 201 or not payload is Dictionary:
+	if result != HTTPRequest.RESULT_SUCCESS:
+		connection_problem.emit("Could not reach the room service. Check your connection and try again.")
+		return
+	var payload: Variant = JSON.parse_string(body.get_string_from_utf8()) if not body.is_empty() else null
+	if response_code != 201 or not payload is Dictionary:
 		connection_problem.emit("Could not create the online room.")
 		return
 	code = str(payload.get("code", ""))
